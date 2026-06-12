@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.DS_Store
+__pycache__/
+*.py[cod]
+
+addin/dist/
+addin/.vite/
+
+local-proxy/.venv/
+local-proxy/.env
+local-proxy/data/
+local-proxy/logs/
+local-proxy/runtime.json
+
+DeepSeek_API_test.txt

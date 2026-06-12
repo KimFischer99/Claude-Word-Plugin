@@ -1,0 +1,14 @@
+{
+  "name": "aw-word-claude-mvp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A\\W Word task pane MVP with a local Claude-compatible proxy.",
+  "scripts": {
+    "dev:addin": "npm --workspace addin run dev",
+    "build": "npm --workspace addin run build",
+    "typecheck": "npm --workspace addin run typecheck"
+  },
+  "workspaces": [
+    "addin"
+  ]
+}
