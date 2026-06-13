@@ -113,8 +113,8 @@ interface ComposerAttachment extends MessageAttachment {
 const DEFAULT_SETTINGS: ProxySettings = {
   provider: "claude2api",
   baseUrl: "/aw-proxy",
-  apiKey: "aw-local-dev-key",
-  adminKey: "aw-local-admin-key",
+  apiKey: "",
+  adminKey: "",
   compatibleBaseUrl: "",
   compatibleApiKey: "",
   compatibleSonnetModel: "deepseek-chat",
