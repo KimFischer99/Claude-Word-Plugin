@@ -39,14 +39,14 @@ mkdir -p "$SYSTEM_DIR/bin" "$SYSTEM_DIR/static" "$PKG_SCRIPTS"
     aw_server.spec
 )
 
-cp -R "$BUILD_DIR/pyinstaller-dist/aw-server" "$SYSTEM_DIR/bin/aw-server"
+ditto --norsrc --noextattr --noqtn --noacl "$BUILD_DIR/pyinstaller-dist/aw-server" "$SYSTEM_DIR/bin/aw-server"
 LEGACY_RUNTIME_GLOB="clo""ve*"
 find "$SYSTEM_DIR/bin/aw-server/_internal" -iname "$LEGACY_RUNTIME_GLOB" -exec rm -rf {} + 2>/dev/null || true
 cp "$ROOT_DIR/scripts/pkg-word-watcher.sh" "$SYSTEM_DIR/bin/aw-word-watcher"
 cp "$ROOT_DIR/scripts/pkg-uninstall.sh" "$SYSTEM_DIR/uninstall.sh"
 chmod 0755 "$SYSTEM_DIR/bin/aw-word-watcher" "$SYSTEM_DIR/uninstall.sh"
 
-cp -R "$ROOT_DIR/addin/dist/." "$SYSTEM_DIR/static/"
+ditto --norsrc --noextattr --noqtn --noacl "$ROOT_DIR/addin/dist" "$SYSTEM_DIR/static"
 sed "s/__PORT__/5201/g" "$ROOT_DIR/addin/manifest.xml.template" > "$SYSTEM_DIR/manifest.xml"
 
 cp "$ROOT_DIR/scripts/pkg-postinstall.sh" "$PKG_SCRIPTS/postinstall"
