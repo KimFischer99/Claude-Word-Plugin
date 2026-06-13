@@ -3,6 +3,7 @@ dist/
 .DS_Store
 __pycache__/
 *.py[cod]
+.aw-runtime/
 
 addin/dist/
 addin/.vite/

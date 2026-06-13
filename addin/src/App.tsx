@@ -3,31 +3,29 @@ import {
   AtSign,
   Check,
   ChevronDown,
+  CircleAlert,
   Clipboard,
   FileText,
   History,
-  KeyRound,
-  LogIn,
   MessageCirclePlus,
-  PenLine,
   PlugZap,
+  Quote,
   RefreshCw,
+  Route,
   Settings,
-  Slash,
-  SquarePen,
   Trash2,
   UserPlus,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ConnectionState = "checking" | "offline" | "not-connected" | "connected";
 type ContextMode = "selection" | "document";
-type WriteAction = "insert" | "replace";
 type ComposerMenu = "commands" | "context" | "model" | null;
 type ModelChoice = "auto" | "sonnet" | "haiku";
 type ThinkingEffort = "auto" | "low" | "medium" | "high";
 type ProviderMode = "claude2api" | "compatible";
+type AttachmentKind = "selection" | "document" | "quote";
 
 interface ProxySettings {
   provider: ProviderMode;
@@ -56,11 +54,20 @@ interface DocumentContext {
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachments?: MessageAttachment[];
+}
+
+interface MessageAttachment {
+  kind: AttachmentKind;
+  label: string;
+  text: string;
+  documentName: string;
+  selectionLength: number;
+  truncated: boolean;
 }
 
 interface QuickTask {
   label: string;
-  command: string;
 }
 
 interface ConversationSnapshot {
@@ -68,7 +75,9 @@ interface ConversationSnapshot {
   title: string;
   messages: ChatMessage[];
   contextSummary: string;
+  documentFingerprint?: string;
   createdAt: number;
+  closedAt?: number;
 }
 
 interface AccountSummary {
@@ -97,6 +106,10 @@ interface SkillRegistryItem {
   path: string;
 }
 
+interface ComposerAttachment extends MessageAttachment {
+  id: string;
+}
+
 const DEFAULT_SETTINGS: ProxySettings = {
   provider: "claude2api",
   baseUrl: "/aw-proxy",
@@ -113,26 +126,30 @@ const DEFAULT_SETTINGS: ProxySettings = {
   assistantName: "A\\W",
 };
 
+interface RequestProfile {
+  model: string;
+  effort: ThinkingEffort;
+}
+
 const MAX_DOCUMENT_CHARS = 12000;
 const LEGACY_SONNET_MODELS = new Set(["claude-sonnet-4-20250514", "claude-sonnet-4-6"]);
-const LEGACY_HAIKU_MODELS = new Set(["claude-3-5-haiku-20241022"]);
+const LEGACY_HAIKU_MODELS = new Set(["claude-3-5-haiku-20241022", "claude-haiku-4-5"]);
 const LEGACY_LOCAL_PROXY_URLS = new Set([
   "http://127.0.0.1:5201",
   "http://localhost:5201",
 ]);
+const PROFILE_STORAGE_KEY = "aw-profile";
+const CONNECT_PANEL_SEEN_KEY = "aw-connect-panel-seen";
 
 const quickTasks: QuickTask[] = [
   {
-    label: "Draft",
-    command: "/Draft ",
+    label: "summarize",
   },
   {
-    label: "Summarize",
-    command: "/Summarize ",
+    label: "humanize",
   },
   {
-    label: "Review",
-    command: "/Review ",
+    label: "review",
   },
 ];
 
@@ -180,6 +197,22 @@ function loadHistory(): ConversationSnapshot[] {
   }
 }
 
+function loadProfileOverride() {
+  try {
+    return localStorage.getItem(PROFILE_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function loadConnectPanelSeen() {
+  try {
+    return localStorage.getItem(CONNECT_PANEL_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function modelLabel(model: ModelChoice) {
   if (model === "auto") return "Auto";
   if (model === "haiku") return "Haiku";
@@ -196,8 +229,33 @@ function resolveModelId(settings: ProxySettings) {
     return settings.compatibleSonnetModel.trim();
   }
 
-  if (settings.model === "haiku") return "claude-3-5-haiku-20241022";
+  if (settings.model === "haiku") return "claude-haiku-4-5";
   return "claude-sonnet-4-6";
+}
+
+function resolveSpecificModelId(settings: ProxySettings, model: Exclude<ModelChoice, "auto">) {
+  if (settings.provider === "compatible") {
+    return model === "haiku"
+      ? settings.compatibleHaikuModel.trim()
+      : settings.compatibleSonnetModel.trim();
+  }
+
+  return model === "haiku" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
+}
+
+function requestProfiles(settings: ProxySettings): RequestProfile[] {
+  if (settings.model !== "auto") {
+    return [{ model: resolveModelId(settings), effort: settings.thinkingEffort }];
+  }
+
+  const profiles: RequestProfile[] = [
+    { model: resolveSpecificModelId(settings, "sonnet"), effort: "medium" },
+    { model: resolveSpecificModelId(settings, "haiku"), effort: "medium" },
+    { model: resolveSpecificModelId(settings, "sonnet"), effort: "low" },
+    { model: resolveSpecificModelId(settings, "haiku"), effort: "low" },
+  ];
+
+  return profiles.filter((profile) => Boolean(profile.model));
 }
 
 function thinkingBudgetTokens(effort: ThinkingEffort) {
@@ -217,6 +275,17 @@ function maxTokensForEffort(effort: ThinkingEffort) {
   return budgetTokens ? budgetTokens + 1200 : 1200;
 }
 
+function plainTextForClipboard(content: string) {
+  return content
+    .replace(/```[a-z]*\n([\s\S]*?)```/gi, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "- ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function normalizeMessagesEndpoint(baseUrl: string) {
   const trimmed = baseUrl.trim().replace(/\/$/, "");
   if (!trimmed) return "";
@@ -230,20 +299,81 @@ function explainError(error: unknown) {
   return "Something went wrong. Check the service and try again.";
 }
 
-function summarizeContext(documentContext: DocumentContext) {
-  if (!documentContext.text) return "No Word text found";
-
-  if (documentContext.mode === "selection") {
-    return `Selection: ${documentContext.selectionLength} chars`;
-  }
-
-  return `Document: ${documentContext.text.length} chars${
-    documentContext.truncated ? " (truncated)" : ""
-  }`;
+function selectionLabel(index: number, total: number) {
+  return total > 1 ? `Selection ${String(index + 1).padStart(2, "0")}` : "Selection";
 }
 
-function buildUserContent(prompt: string, documentContext: DocumentContext | null) {
-  if (!documentContext?.text) {
+function normalizeContextLabels(attachments: ComposerAttachment[]) {
+  const selectionIds = attachments
+    .filter((attachment) => attachment.kind === "selection")
+    .map((attachment) => attachment.id);
+
+  return attachments.map((attachment) => {
+    if (attachment.kind !== "selection") return attachment;
+    const index = selectionIds.indexOf(attachment.id);
+    return {
+      ...attachment,
+      label: selectionLabel(index, selectionIds.length),
+    };
+  });
+}
+
+function contextSummaryFromAttachments(attachments: ComposerAttachment[]) {
+  const contextLabels = attachments
+    .filter((attachment) => attachment.kind === "selection" || attachment.kind === "document")
+    .map((attachment) => attachment.label);
+
+  return contextLabels.length ? contextLabels.join(", ") : "Chat only";
+}
+
+function formatClosedMinute(value: number) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function accountDisplayName(index: number) {
+  return `Account ${String(index + 1).padStart(2, "0")}`;
+}
+
+function accountState(account: AccountSummary) {
+  const status = account.status.toLowerCase();
+  if (
+    status.includes("limit") ||
+    status.includes("rate") ||
+    status.includes("invalid") ||
+    status.includes("error") ||
+    status.includes("disabled")
+  ) {
+    return "limited";
+  }
+
+  if (
+    status.includes("valid") ||
+    status.includes("online") ||
+    status.includes("active") ||
+    status.includes("ready") ||
+    Boolean(account.cookie_value)
+  ) {
+    return "online";
+  }
+
+  return "limited";
+}
+
+function testStatusTone(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized === "online") return "online";
+  if (normalized === "testing") return "testing";
+  return "limited";
+}
+
+function buildUserContent(prompt: string, attachments: MessageAttachment[]) {
+  if (!attachments.length) {
     return [
       "Direct chat. No file, pasted content, Word selection, or document context is attached.",
       "Respond only to the user's message below.",
@@ -253,25 +383,36 @@ function buildUserContent(prompt: string, documentContext: DocumentContext | nul
     ].join("\n");
   }
 
+  const contextBlocks = attachments.map((attachment) => {
+    if (attachment.kind === "quote") {
+      return [`Quoted assistant response: ${attachment.label}`, attachment.text].join("\n");
+    }
+
+    return [
+      `Context source: ${attachment.kind}`,
+      `Label: ${attachment.label}`,
+      `Document: ${attachment.documentName}`,
+      "",
+      attachment.text,
+    ].join("\n");
+  });
+
   return [
     `User request: ${prompt}`,
     "",
-    `Context source: ${documentContext.mode}`,
-    `Document: ${documentContext.documentName}`,
-    "",
-    "Word context:",
-    documentContext.text,
+    "Attached context:",
+    contextBlocks.join("\n\n---\n\n"),
   ].join("\n");
 }
 
 function buildSystemPrompt(
   awInstructions: string,
-  documentContext: DocumentContext | null,
+  attachments: MessageAttachment[],
   activeSkill: SkillDefinition | null,
 ) {
   const parts: string[] = [];
 
-  if (documentContext?.text && awInstructions.trim()) {
+  if (attachments.some((attachment) => attachment.kind !== "quote") && awInstructions.trim()) {
     parts.push(awInstructions.trim());
   }
 
@@ -282,10 +423,15 @@ function buildSystemPrompt(
   return parts.length ? parts.join("\n\n") : undefined;
 }
 
-function promptWithoutSkillCommand(prompt: string, activeSkill: SkillDefinition | null) {
-  if (!activeSkill) return prompt;
-  const command = `/${activeSkill.label}`;
-  return prompt.startsWith(command) ? prompt.slice(command.length).trim() : prompt;
+function messageAttachmentFromComposer(attachment: ComposerAttachment): MessageAttachment {
+  return {
+    kind: attachment.kind,
+    label: attachment.label,
+    text: attachment.text,
+    documentName: attachment.documentName,
+    selectionLength: attachment.selectionLength,
+    truncated: attachment.truncated,
+  };
 }
 
 function formatInline(text: string) {
@@ -367,6 +513,15 @@ function titleFromPrompt(prompt: string) {
   return clean.length > 36 ? `${clean.slice(0, 34)}...` : clean || "Untitled chat";
 }
 
+async function getDocumentFingerprint(): Promise<string> {
+  if (typeof Word === "undefined") return "local";
+  return Word.run(async (context) => {
+    context.document.properties.load("title");
+    await context.sync();
+    return context.document.properties.title || "Untitled document";
+  });
+}
+
 async function readSelectionContext(): Promise<DocumentContext> {
   if (typeof Word === "undefined") {
     return {
@@ -424,27 +579,6 @@ async function readDocumentBodyContext(): Promise<DocumentContext> {
   });
 }
 
-async function readBestContext() {
-  const selection = await readSelectionContext();
-  if (selection.text) return selection;
-  return readDocumentBodyContext();
-}
-
-async function writeToWord(action: WriteAction, text: string) {
-  if (typeof Word === "undefined") {
-    throw new Error("Open this task pane inside Microsoft Word to write content.");
-  }
-
-  await Word.run(async (context) => {
-    const selection = context.document.getSelection();
-    selection.insertText(
-      text,
-      action === "replace" ? Word.InsertLocation.replace : Word.InsertLocation.end,
-    );
-    await context.sync();
-  });
-}
-
 async function loadSkillRegistry(): Promise<SkillDefinition[]> {
   const registryResponse = await fetch("/skills/registry.json");
   if (!registryResponse.ok) return [];
@@ -475,13 +609,16 @@ async function loadSkillRegistry(): Promise<SkillDefinition[]> {
 }
 
 export function App() {
+  const composerRef = useRef<HTMLFormElement | null>(null);
   const [settings, setSettings] = useState<ProxySettings>(() => loadSettings());
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [error, setError] = useState<string>("");
-  const [notice, setNotice] = useState<string>("");
+  const [testStatus, setTestStatus] = useState<string>("");
   const [prompt, setPrompt] = useState("");
   const [contextSummary, setContextSummary] = useState("Chat only");
-  const [attachedContext, setAttachedContext] = useState<DocumentContext | null>(null);
+  const [currentDocFingerprint, setCurrentDocFingerprint] = useState("");
+  const [contextAttachments, setContextAttachments] = useState<ComposerAttachment[]>([]);
+  const [quoteAttachment, setQuoteAttachment] = useState<ComposerAttachment | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [history, setHistory] = useState<ConversationSnapshot[]>(() => loadHistory());
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
@@ -489,20 +626,38 @@ export function App() {
   const [skills, setSkills] = useState<SkillDefinition[]>([]);
   const [activeSkill, setActiveSkill] = useState<SkillDefinition | null>(null);
   const [awInstructions, setAwInstructions] = useState("");
+  const [awProfile, setAwProfile] = useState(() => loadProfileOverride());
+  const [defaultAwProfile, setDefaultAwProfile] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [connectPanelSeen, setConnectPanelSeen] = useState(() => loadConnectPanelSeen());
   const [composerMenu, setComposerMenu] = useState<ComposerMenu>(null);
-  const [pendingWrite, setPendingWrite] = useState<WriteAction | null>(null);
+  const [modelListOpen, setModelListOpen] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
-  const lastAssistantMessage = useMemo(
-    () => [...messages].reverse().find((message) => message.role === "assistant"),
-    [messages],
+  const composerAttachments = useMemo(
+    () => (quoteAttachment ? [...contextAttachments, quoteAttachment] : contextAttachments),
+    [contextAttachments, quoteAttachment],
   );
+  const canSubmit = Boolean(prompt.trim() || activeSkill || composerAttachments.length);
 
-  const isAttachMode = Boolean(attachedContext?.text);
+  function markConnectPanelSeen() {
+    setConnectPanelSeen(true);
+    try {
+      localStorage.setItem(CONNECT_PANEL_SEEN_KEY, "1");
+    } catch {
+      // Ignore storage failures in restricted hosts.
+    }
+  }
+
+  const saveAwProfile = useCallback((next: string) => {
+    setAwProfile(next);
+    setAwInstructions(next.trim() ? next : defaultAwProfile);
+    localStorage.setItem(PROFILE_STORAGE_KEY, next);
+  }, [defaultAwProfile]);
 
   const saveSettings = useCallback((next: ProxySettings) => {
     setSettings(next);
@@ -540,21 +695,23 @@ export function App() {
         title: titleFromPrompt(firstUserMessage?.content ?? "Untitled chat"),
         messages: nextMessages,
         contextSummary,
+        documentFingerprint: currentDocFingerprint || undefined,
         createdAt: Date.now(),
+        closedAt: Date.now(),
       };
 
       saveHistory([snapshot, ...history.filter((item) => item.title !== snapshot.title)]);
     },
-    [contextSummary, history, messages, saveHistory],
+    [contextSummary, currentDocFingerprint, history, messages, saveHistory],
   );
 
-  const checkCompatibleApi = useCallback(async () => {
+  const checkCompatibleApi = useCallback(async (): Promise<ConnectionState> => {
     const endpoint = normalizeMessagesEndpoint(settings.compatibleBaseUrl);
     const model = resolveModelId(settings);
 
     if (!endpoint || !settings.compatibleApiKey.trim() || !model) {
       setConnection("not-connected");
-      return;
+      return "not-connected";
     }
 
     const response = await fetch(endpoint, {
@@ -570,28 +727,27 @@ export function App() {
       }),
     });
 
-    setConnection(response.ok ? "connected" : "not-connected");
+    const nextConnection = response.ok ? "connected" : "not-connected";
+    setConnection(nextConnection);
     if (!response.ok) {
-      throw new Error(`Compatible API test failed with HTTP ${response.status}.`);
+      throw new Error(`Custom API test failed with HTTP ${response.status}.`);
     }
+    return nextConnection;
   }, [settings]);
 
-  const checkConnection = useCallback(async () => {
+  const checkConnection = useCallback(async (options?: { quiet?: boolean }): Promise<ConnectionState> => {
     setConnection("checking");
-    setError("");
-    setNotice("");
+    if (!options?.quiet) setError("");
 
     try {
       if (settings.provider === "compatible") {
-        await checkCompatibleApi();
-        setNotice("API link is ready.");
-        return;
+        return await checkCompatibleApi();
       }
 
       const health = await fetch(`${settings.baseUrl}/health`);
       if (!health.ok) {
         setConnection("offline");
-        return;
+        return "offline";
       }
 
       const stats = await fetch(`${settings.baseUrl}/auth/status`, {
@@ -600,15 +756,18 @@ export function App() {
 
       if (!stats.ok) {
         setConnection("not-connected");
-        return;
+        return "not-connected";
       }
 
       const payload = await stats.json();
-      setConnection(payload?.connected ? "connected" : "not-connected");
+      const nextConnection = payload?.connected ? "connected" : "not-connected";
+      setConnection(nextConnection);
       await fetchAccounts();
+      return nextConnection;
     } catch (connectionError) {
       setConnection("offline");
-      setError(explainError(connectionError));
+      if (!options?.quiet) setError(explainError(connectionError));
+      return "offline";
     }
   }, [checkCompatibleApi, fetchAccounts, settings.adminKey, settings.baseUrl, settings.provider]);
 
@@ -617,20 +776,106 @@ export function App() {
   }, [checkConnection]);
 
   useEffect(() => {
+    getDocumentFingerprint().then(setCurrentDocFingerprint).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     void loadSkillRegistry().then(setSkills);
     void fetch("/AW.md")
       .then((response) => (response.ok ? response.text() : ""))
-      .then(setAwInstructions)
-      .catch(() => setAwInstructions(""));
+      .then((profile) => {
+        setDefaultAwProfile(profile);
+        setAwProfile((prev) => (prev.trim() ? prev : profile));
+        setAwInstructions((prev) => (prev.trim() ? prev : profile));
+      })
+      .catch(() => {
+        setAwInstructions((prev) => prev);
+      });
   }, []);
+
+  useEffect(() => {
+    function archiveOnUnload() {
+      archiveConversation();
+    }
+
+    window.addEventListener("beforeunload", archiveOnUnload);
+    return () => window.removeEventListener("beforeunload", archiveOnUnload);
+  }, [archiveConversation]);
+
+  useEffect(() => {
+    if (!composerMenu) return;
+
+    function closeMenuOnOutsidePointer(event: PointerEvent) {
+      if (!composerRef.current?.contains(event.target as Node)) {
+        setComposerMenu(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
+  }, [composerMenu]);
+
+  useEffect(() => {
+    if (composerMenu !== "model") {
+      setModelListOpen(false);
+    }
+  }, [composerMenu]);
+
+  useEffect(() => {
+    setContextSummary(contextSummaryFromAttachments(contextAttachments));
+  }, [contextAttachments]);
+
+  function makeAttachment(context: DocumentContext, idSuffix = `${Date.now()}`): ComposerAttachment {
+    return {
+      id: `${context.mode}-${idSuffix}-${Math.random().toString(36).slice(2, 8)}`,
+      kind: context.mode,
+      label: context.mode === "selection" ? "Selection" : "Document",
+      text: context.text,
+      documentName: context.documentName,
+      selectionLength: context.selectionLength,
+      truncated: context.truncated,
+    };
+  }
+
+  function updateContextAttachments(
+    updater: (current: ComposerAttachment[]) => ComposerAttachment[],
+  ) {
+    setContextAttachments((current) => normalizeContextLabels(updater(current)));
+  }
+
+  function removeAttachment(id: string) {
+    if (quoteAttachment?.id === id) {
+      setQuoteAttachment(null);
+      return;
+    }
+
+    updateContextAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
 
   async function attachContext(mode: ContextMode) {
     try {
       setError("");
       const documentContext =
         mode === "selection" ? await readSelectionContext() : await readDocumentBodyContext();
-      setAttachedContext(documentContext.text ? documentContext : null);
-      setContextSummary(documentContext.text ? summarizeContext(documentContext) : "Chat only");
+      if (!documentContext.text) {
+        setError(mode === "selection" ? "No selected Word text found." : "No readable Word text found.");
+        setComposerMenu(mode === "selection" ? "context" : null);
+        return;
+      }
+
+      updateContextAttachments((current) => {
+        if (mode === "document") {
+          return [...current.filter((attachment) => attachment.kind !== "document"), makeAttachment(documentContext)];
+        }
+
+        const selectionCount = current.filter((attachment) => attachment.kind === "selection").length;
+        if (selectionCount >= 5) {
+          setError("Selection supports up to 5 text blocks.");
+          return current;
+        }
+
+        return [...current, makeAttachment(documentContext)];
+      });
       setPrompt((current) => (current.endsWith("@") ? current.slice(0, -1) : current));
       setComposerMenu(null);
     } catch (contextError) {
@@ -638,36 +883,67 @@ export function App() {
     }
   }
 
-  async function getContextForSend(attachCurrentContext: boolean) {
-    if (!attachCurrentContext) return attachedContext?.text ? attachedContext : null;
+  async function handleContextButton() {
+    if (composerMenu === "context") {
+      setComposerMenu(null);
+      return;
+    }
 
-    const documentContext = await readBestContext();
-    setAttachedContext(documentContext.text ? documentContext : null);
-    setContextSummary(documentContext.text ? summarizeContext(documentContext) : "Chat only");
-    return documentContext.text ? documentContext : null;
+    try {
+      setError("");
+      const selection = await readSelectionContext();
+      if (selection.text) {
+        await attachContext("selection");
+        return;
+      }
+    } catch {
+      // Fall through to the explicit context menu.
+    }
+
+    setComposerMenu("context");
   }
 
-  async function sendPrompt(nextPrompt = prompt, attachCurrentContext = false) {
+  async function sendPrompt(
+    nextPrompt = prompt,
+    baseMessages = messages,
+    attachmentOverride?: MessageAttachment[],
+  ) {
     const trimmedPrompt = nextPrompt.trim();
-    if (!trimmedPrompt || isGenerating) return;
-    const userPrompt = promptWithoutSkillCommand(trimmedPrompt, activeSkill) || trimmedPrompt;
+    const skillCommand = activeSkill ? `/${activeSkill.label}` : "";
+    const effectivePrompt = trimmedPrompt || skillCommand;
+    if ((!effectivePrompt && !composerAttachments.length) || isGenerating) return;
+    const userPrompt = trimmedPrompt || activeSkill?.label || effectivePrompt;
+    const attachmentsForSend = attachmentOverride ?? composerAttachments.map(messageAttachmentFromComposer);
+    const messageAttachments = attachmentsForSend.map((attachment) => ({
+      ...attachment,
+      label:
+        attachment.kind === "document"
+          ? "@ doc"
+          : attachment.kind === "selection"
+            ? `@ ${attachment.label.toLowerCase()}`
+            : "@ quote",
+    }));
 
     setIsGenerating(true);
     setError("");
-    setNotice("");
     setComposerMenu(null);
 
     try {
-      const documentContext = await getContextForSend(attachCurrentContext);
-      const userContent = buildUserContent(userPrompt, documentContext);
-      const systemPrompt = buildSystemPrompt(awInstructions, documentContext, activeSkill);
+      const userContent = buildUserContent(userPrompt, attachmentsForSend);
+      const systemPrompt = buildSystemPrompt(awInstructions, attachmentsForSend, activeSkill);
       const outgoingMessages: ChatMessage[] = [
-        ...messages,
-        { role: "user", content: trimmedPrompt },
+        ...baseMessages,
+        {
+          role: "user",
+          content: effectivePrompt || "Attached context",
+          attachments: messageAttachments,
+        },
       ];
 
       setMessages(outgoingMessages);
       setPrompt("");
+      setContextAttachments([]);
+      setQuoteAttachment(null);
 
       const endpoint =
         settings.provider === "compatible"
@@ -680,56 +956,71 @@ export function App() {
         throw new Error("Configure a provider endpoint and key before sending.");
       }
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authKey}`,
-        },
-        body: JSON.stringify({
-          model: resolveModelId(settings),
-          max_tokens: maxTokensForEffort(settings.thinkingEffort),
-          thinking: thinkingPayload(settings.thinkingEffort),
-          system: systemPrompt,
-          messages: [
-            ...messages.map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-            { role: "user", content: userContent },
-          ],
-          metadata: documentContext
-            ? {
-                documentName: documentContext.documentName,
-                contextMode: documentContext.mode,
-                selectionLength: documentContext.selectionLength,
-                thinkingEffort: settings.thinkingEffort,
-                skill: activeSkill?.id,
-              }
-            : {
-                contextMode: "chat",
-                thinkingEffort: settings.thinkingEffort,
+      const profiles = requestProfiles(settings);
+      let content = "";
+      let lastRequestError = "";
+
+      for (const profile of profiles) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authKey}`,
+            },
+            body: JSON.stringify({
+              model: profile.model,
+              max_tokens: maxTokensForEffort(profile.effort),
+              thinking: thinkingPayload(profile.effort),
+              system: systemPrompt,
+              messages: [
+                ...baseMessages.map((message) => ({
+                  role: message.role,
+                  content:
+                    message.role === "user"
+                      ? buildUserContent(message.content, message.attachments ?? [])
+                      : message.content,
+                })),
+                { role: "user", content: userContent },
+              ],
+              metadata: {
+                contextMode: attachmentsForSend.length ? "attached" : "chat",
+                contextLabels: attachmentsForSend.map((attachment) => attachment.label),
+                selectionCount: attachmentsForSend.filter((attachment) => attachment.kind === "selection").length,
+                hasDocument: attachmentsForSend.some((attachment) => attachment.kind === "document"),
+                hasQuote: attachmentsForSend.some((attachment) => attachment.kind === "quote"),
+                thinkingEffort: profile.effort,
+                model: profile.model,
+                autoFallback: settings.model === "auto",
                 skill: activeSkill?.id,
               },
-        }),
-      });
+            }),
+          });
 
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed with HTTP ${response.status}.`);
+          if (!response.ok) {
+            const detail = await response.text();
+            lastRequestError = detail || `Request failed with HTTP ${response.status}.`;
+            continue;
+          }
+
+          const payload = await response.json();
+          content = Array.isArray(payload.content)
+            ? payload.content
+                .filter((part: { type?: string; text?: string }) => !part.type || part.type === "text")
+                .map((part: { text?: string }) => part.text)
+                .filter(Boolean)
+                .join("\n")
+            : "";
+
+          if (content) break;
+          lastRequestError = "The provider returned an empty response.";
+        } catch (profileError) {
+          lastRequestError = explainError(profileError);
+        }
       }
 
-      const payload = await response.json();
-      const content = Array.isArray(payload.content)
-        ? payload.content
-            .filter((part: { type?: string; text?: string }) => !part.type || part.type === "text")
-            .map((part: { text?: string }) => part.text)
-            .filter(Boolean)
-            .join("\n")
-        : "";
-
       if (!content) {
-        throw new Error("The provider returned an empty response.");
+        throw new Error(lastRequestError || "The provider returned an empty response.");
       }
 
       const completedMessages: ChatMessage[] = [
@@ -738,10 +1029,14 @@ export function App() {
       ];
       const snapshot: ConversationSnapshot = {
         id: `${Date.now()}`,
-        title: titleFromPrompt(outgoingMessages[0]?.content ?? userPrompt),
+        title: titleFromPrompt(outgoingMessages[0]?.content ?? effectivePrompt),
         messages: completedMessages,
-        contextSummary: documentContext ? summarizeContext(documentContext) : "Chat only",
+        contextSummary: attachmentsForSend.length
+          ? attachmentsForSend.map((attachment) => attachment.label).join(", ")
+          : "Chat only",
+        documentFingerprint: currentDocFingerprint || undefined,
         createdAt: Date.now(),
+        closedAt: Date.now(),
       };
 
       setMessages(completedMessages);
@@ -754,41 +1049,64 @@ export function App() {
     }
   }
 
-  async function copyResponse() {
-    if (!lastAssistantMessage) return;
-    await navigator.clipboard.writeText(lastAssistantMessage.content);
+  async function copyMessage(content: string) {
+    await navigator.clipboard.writeText(plainTextForClipboard(content));
   }
 
-  async function openLogin() {
-    try {
-      const response = await fetch(`${settings.baseUrl}/auth/open`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${settings.adminKey}` },
-      });
-      const payload = await response.json();
-      window.open(payload.url ?? settings.baseUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      setError("Unable to open the account page. Check whether the local service is running.");
-    }
+  function quoteMessage(content: string, index: number) {
+    setQuoteAttachment({
+      id: `quote-${Date.now()}-${index}`,
+      kind: "quote",
+      label: "Quote",
+      text: content,
+      documentName: "Conversation",
+      selectionLength: content.length,
+      truncated: false,
+    });
+    setComposerMenu(null);
+  }
+
+  function retryFromMessage(index: number) {
+    const lastUserIndex = messages
+      .slice(0, index)
+      .map((message, messageIndex) => ({ message, messageIndex }))
+      .reverse()
+      .find((item) => item.message.role === "user")?.messageIndex;
+
+    if (lastUserIndex === undefined) return;
+
+    const userMessage = messages[lastUserIndex];
+    const baseMessages = messages.slice(0, lastUserIndex);
+    setMessages(baseMessages);
+    setPrompt(userMessage.content === "Attached context" ? "" : userMessage.content);
+    void sendPrompt(
+      userMessage.content === "Attached context" ? "" : userMessage.content,
+      baseMessages,
+      userMessage.attachments ?? [],
+    );
   }
 
   async function restartAndCheck() {
     setIsTesting(true);
     setError("");
-    setNotice("");
+    setTestStatus("Testing");
 
     try {
       if (settings.provider === "claude2api") {
-        await fetch(`${settings.baseUrl}/service/restart`, {
+        const response = await fetch(`${settings.baseUrl}/service/restart`, {
           method: "POST",
           headers: { Authorization: `Bearer ${settings.adminKey}` },
         });
+        if (!response.ok) {
+          throw new Error(`Service test failed with HTTP ${response.status}.`);
+        }
       }
 
-      await checkConnection();
-      setNotice("Service tested.");
+      const nextConnection = await checkConnection({ quiet: true });
+      setTestStatus(nextConnection === "connected" ? "Online" : "Offline");
     } catch (serviceError) {
-      setError(explainError(serviceError));
+      setConnection("offline");
+      setTestStatus(explainError(serviceError).slice(0, 42));
     } finally {
       setIsTesting(false);
     }
@@ -800,7 +1118,7 @@ export function App() {
 
     setIsSavingAccount(true);
     setError("");
-    setNotice("");
+    setTestStatus("Testing");
 
     try {
       const response = await fetch(`${settings.baseUrl}/api/admin/accounts`, {
@@ -817,11 +1135,12 @@ export function App() {
       }
 
       setNewAccountCookie("");
-      setNotice("Account saved.");
       await fetchAccounts();
-      await checkConnection();
+      const nextConnection = await checkConnection({ quiet: true });
+      setTestStatus(nextConnection === "connected" ? "Online" : "Limited");
     } catch (accountError) {
       setError(explainError(accountError));
+      setTestStatus("Limited");
     } finally {
       setIsSavingAccount(false);
     }
@@ -829,7 +1148,6 @@ export function App() {
 
   async function deleteAccount(id: string) {
     setError("");
-    setNotice("");
 
     try {
       const response = await fetch(`${settings.baseUrl}/api/admin/accounts/${id}`, {
@@ -841,22 +1159,10 @@ export function App() {
         throw new Error(`Account delete failed with HTTP ${response.status}.`);
       }
 
-      setNotice("Account removed.");
       await fetchAccounts();
-      await checkConnection();
+      await checkConnection({ quiet: true });
     } catch (accountError) {
       setError(explainError(accountError));
-    }
-  }
-
-  async function confirmWrite() {
-    if (!pendingWrite || !lastAssistantMessage) return;
-
-    try {
-      await writeToWord(pendingWrite, lastAssistantMessage.content);
-      setPendingWrite(null);
-    } catch (writeError) {
-      setError(explainError(writeError));
     }
   }
 
@@ -865,20 +1171,28 @@ export function App() {
     setMessages([]);
     setPrompt("");
     setError("");
-    setNotice("");
-    setAttachedContext(null);
+    setContextAttachments([]);
+    setQuoteAttachment(null);
     setContextSummary("Chat only");
     setActiveSkill(null);
     setComposerMenu(null);
+    setModelListOpen(false);
   }
 
   function restoreConversation(snapshot: ConversationSnapshot) {
     archiveConversation();
     setMessages(snapshot.messages);
     setContextSummary(snapshot.contextSummary);
-    setAttachedContext(null);
+    setContextAttachments([]);
+    setQuoteAttachment(null);
+    setSelectedHistoryId(snapshot.id);
     setHistoryOpen(false);
     setComposerMenu(null);
+    setModelListOpen(false);
+  }
+
+  function deleteHistoryItem(id: string) {
+    saveHistory(history.filter((item) => item.id !== id));
   }
 
   function updatePrompt(value: string) {
@@ -887,19 +1201,18 @@ export function App() {
     if (lastCharacter === "/") {
       setComposerMenu("commands");
     } else if (lastCharacter === "@") {
-      setComposerMenu("context");
+      void handleContextButton();
     }
   }
 
   function selectSkill(skill: SkillDefinition) {
+    if (!skill.loaded) return;
     setActiveSkill(skill);
-    const command = quickTasks.find((task) => task.label === skill.label)?.command ?? `/${skill.label} `;
     setPrompt((current) => {
-      if (!current || current === "/" || current.endsWith("/")) return command;
-      return current.startsWith(command) ? current : `${command}${current}`;
+      if (current === "/" || current.endsWith("/")) return current.slice(0, -1);
+      return current;
     });
     setComposerMenu(null);
-    setNotice(skill.loaded ? `${skill.label} loaded.` : `${skill.label} is ready.`);
   }
 
   return (
@@ -929,7 +1242,10 @@ export function App() {
             type="button"
             aria-label="Open settings"
             title="Settings"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              markConnectPanelSeen();
+              setSettingsOpen(true);
+            }}
           >
             <Settings size={20} />
           </button>
@@ -937,9 +1253,12 @@ export function App() {
         <button
           className="brandButton"
           type="button"
-          aria-label="Restart and test service"
-          title="Restart and test service"
-          onClick={() => void restartAndCheck()}
+          aria-label="Check service"
+          title="Check service"
+          onClick={() => {
+            markConnectPanelSeen();
+            void checkConnection({ quiet: true });
+          }}
           disabled={isTesting}
         >
           <img src="/assets/aw-logo.png" alt="" />
@@ -954,18 +1273,35 @@ export function App() {
         </button>
       </header>
 
-      {connection !== "connected" && settings.provider === "claude2api" ? (
+      {connection !== "connected" &&
+      settings.provider === "claude2api" &&
+      !accounts.length &&
+      !connectPanelSeen ? (
         <section className="connectPanel">
           <div>
             <h2>Connect account</h2>
             <p>Add a Claude Free account cookie in Settings, then test the local link.</p>
           </div>
           <div className="connectActions">
-            <button type="button" className="primaryButton compact" onClick={openLogin}>
-              <LogIn size={16} />
-              Login
+            <button
+              type="button"
+              className="primaryButton compact"
+              onClick={() => {
+                markConnectPanelSeen();
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings size={16} />
+              Settings
             </button>
-            <button type="button" className="ghostButton compact" onClick={checkConnection}>
+            <button
+              type="button"
+              className="ghostButton compact"
+              onClick={() => {
+                markConnectPanelSeen();
+                void checkConnection();
+              }}
+            >
               <RefreshCw size={16} />
               Check
             </button>
@@ -981,7 +1317,42 @@ export function App() {
                 <div className="messageRole">
                   {message.role === "user" ? settings.userName : settings.assistantName}
                 </div>
+                {message.attachments?.length ? (
+                  <div className="messageTags" aria-label="Attached context">
+                    {message.attachments.map((attachment) => (
+                      <span key={`${attachment.kind}-${attachment.label}`}>{attachment.label}</span>
+                    ))}
+                  </div>
+                ) : null}
                 <MarkdownMessage content={message.content} />
+                {message.role === "assistant" ? (
+                  <div className="assistantActions" aria-label="Assistant actions">
+                    <button
+                      type="button"
+                      aria-label="Retry"
+                      title="Retry"
+                      onClick={() => retryFromMessage(index)}
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Copy"
+                      title="Copy"
+                      onClick={() => void copyMessage(message.content)}
+                    >
+                      <Clipboard size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Quote"
+                      title="Quote"
+                      onClick={() => quoteMessage(message.content, index)}
+                    >
+                      <Quote size={14} />
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
             {isGenerating ? (
@@ -998,33 +1369,16 @@ export function App() {
           </div>
         ) : (
           <div className="emptyState">
-            <div className="emptyMark" aria-hidden="true">
-              A\W
-            </div>
+            <img className="emptyMark" src="/assets/aw-logo-mark.svg" alt="" aria-hidden="true" />
             <div className="emptyTitle">How can I help you with this document?</div>
+            <div className="emptyCodeBlock" aria-hidden="true">
+              <span className="emptyCodePrompt">&gt;</span>
+              <span className="emptyCodeCycle" />
+            </div>
             <span className="emptyRule" />
           </div>
         )}
       </section>
-
-      {lastAssistantMessage && isAttachMode ? (
-        <section className="actions" aria-label="Response actions">
-          <button type="button" onClick={() => setPendingWrite("insert")}>
-            <PenLine size={15} />
-            Insert
-          </button>
-          <button type="button" onClick={() => setPendingWrite("replace")}>
-            <SquarePen size={15} />
-            Replace
-          </button>
-          <button type="button" onClick={copyResponse}>
-            <Clipboard size={15} />
-            Copy
-          </button>
-        </section>
-      ) : null}
-
-      {notice ? <div className="notice">{notice}</div> : null}
 
       {error ? (
         <div className="error" role="alert">
@@ -1033,6 +1387,7 @@ export function App() {
       ) : null}
 
       <form
+        ref={composerRef}
         className="composer"
         onSubmit={(event) => {
           event.preventDefault();
@@ -1040,15 +1395,25 @@ export function App() {
         }}
       >
         {composerMenu ? (
-          <div className="composerMenu" role="menu">
+          <div className={`composerMenu ${composerMenu}`} role="menu">
             {composerMenu === "commands" ? (
               <>
                 {skills.length ? (
                   skills.map((skill) => (
-                    <button key={skill.id} type="button" onClick={() => selectSkill(skill)}>
-                      <KeyRound size={16} />
-                      <span>{skill.label}</span>
-                      {skill.loaded ? <Check className="trailingIcon" size={14} /> : null}
+                    <button
+                      key={skill.id}
+                      type="button"
+                      className={`skillMenuItem ${skill.loaded ? "loaded" : "disabled"} ${
+                        activeSkill?.id === skill.id ? "selected" : ""
+                      }`}
+                      disabled={!skill.loaded}
+                      onClick={() => selectSkill(skill)}
+                    >
+                      <span className="skillSlash" aria-hidden="true">
+                        /
+                      </span>
+                      <span className="skillName">{skill.label}</span>
+                      {activeSkill?.id === skill.id ? <Check className="trailingIcon" size={14} /> : null}
                     </button>
                   ))
                 ) : (
@@ -1057,33 +1422,41 @@ export function App() {
               </>
             ) : composerMenu === "context" ? (
               <>
-                <button type="button" onClick={() => void attachContext("selection")}>
+                <button
+                  type="button"
+                  className={
+                    contextAttachments.some((attachment) => attachment.kind === "selection")
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() => void attachContext("selection")}
+                >
                   <AtSign size={16} />
-                  <span>Current selection</span>
+                  <span>Selection</span>
+                  {contextAttachments.some((attachment) => attachment.kind === "selection") ? (
+                    <Check className="trailingIcon" size={14} />
+                  ) : null}
                 </button>
-                <button type="button" onClick={() => void attachContext("document")}>
+                <button
+                  type="button"
+                  className={
+                    contextAttachments.some((attachment) => attachment.kind === "document")
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() => void attachContext("document")}
+                >
                   <FileText size={16} />
-                  <span>Document body</span>
+                  <span>Document</span>
+                  {contextAttachments.some((attachment) => attachment.kind === "document") ? (
+                    <Check className="trailingIcon" size={14} />
+                  ) : null}
                 </button>
               </>
             ) : (
               <>
-                <div className="menuSectionLabel">Model</div>
-                <div className="optionList" role="group" aria-label="Model">
-                  {(["auto", "sonnet", "haiku"] as const).map((model) => (
-                    <button
-                      key={model}
-                      type="button"
-                      className={settings.model === model ? "selected" : ""}
-                      onClick={() => saveSettings({ ...settings, model })}
-                    >
-                      <span>{modelLabel(model)}</span>
-                      {settings.model === model ? <Check size={14} /> : null}
-                    </button>
-                  ))}
-                </div>
-                <div className="menuSectionLabel">Thinking effort</div>
-                <div className="optionList" role="group" aria-label="Thinking effort">
+                <div className="menuSectionLabel">Thinking Effort</div>
+                <div className="optionList" role="group" aria-label="Thinking Effort">
                   {(["auto", "low", "medium", "high"] as const).map((effort) => (
                     <button
                       key={effort}
@@ -1096,6 +1469,34 @@ export function App() {
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="modelMenuToggle"
+                  aria-expanded={modelListOpen}
+                  onClick={() => setModelListOpen((current) => !current)}
+                >
+                  <span>Model Setting</span>
+                  <strong>{modelLabel(settings.model)}</strong>
+                  <ChevronDown size={15} />
+                </button>
+                {modelListOpen ? (
+                  <div className="optionList" role="group" aria-label="Model">
+                    {(["auto", "sonnet", "haiku"] as const).map((model) => (
+                      <button
+                        key={model}
+                        type="button"
+                        className={settings.model === model ? "selected" : ""}
+                        onClick={() => {
+                          saveSettings({ ...settings, model });
+                          setModelListOpen(false);
+                        }}
+                      >
+                        <span>{modelLabel(model)}</span>
+                        {settings.model === model ? <Check size={14} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </>
             )}
           </div>
@@ -1104,6 +1505,33 @@ export function App() {
         <label className="srOnly" htmlFor="prompt">
           Message
         </label>
+        {activeSkill || composerAttachments.length ? (
+          <div className="composerTokens">
+            {activeSkill ? (
+              <button
+                className="skillPill"
+                type="button"
+                title="Remove skill"
+                onClick={() => setActiveSkill(null)}
+              >
+                <span>/{activeSkill.label}</span>
+                <X size={12} />
+              </button>
+            ) : null}
+            {composerAttachments.map((attachment) => (
+              <button
+                key={attachment.id}
+                className={`contextPill ${attachment.kind}`}
+                type="button"
+                title={`Remove ${attachment.label}`}
+                onClick={() => removeAttachment(attachment.id)}
+              >
+                <span>{attachment.label}</span>
+                <X size={12} />
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
           id="prompt"
           value={prompt}
@@ -1120,67 +1548,51 @@ export function App() {
               void sendPrompt();
             }
           }}
-          placeholder="Message"
+          placeholder="Ask anything about this document…"
         />
         <div className="composerFooter">
           <button
-            className="toolButton"
+            className={`toolButton ${activeSkill || composerMenu === "commands" ? "active" : ""}`}
             type="button"
             aria-label="Open task commands"
             title="Tasks"
             onClick={() => setComposerMenu(composerMenu === "commands" ? null : "commands")}
           >
-            <Slash size={19} />
+            <span className="slashGlyph" aria-hidden="true">
+              /
+            </span>
           </button>
           <button
-            className={`toolButton ${attachedContext?.text ? "active" : ""}`}
+            className={`toolButton ${
+              contextAttachments.length || quoteAttachment || composerMenu === "context" ? "active" : ""
+            }`}
             type="button"
             aria-label="Attach Word context"
-            aria-pressed={Boolean(attachedContext?.text)}
+            aria-pressed={Boolean(contextAttachments.length || quoteAttachment)}
             title="Attach Word context"
-            onClick={() => setComposerMenu(composerMenu === "context" ? null : "context")}
+            onClick={() => void handleContextButton()}
           >
             <AtSign size={19} />
           </button>
-          {attachedContext ? (
-            <button
-              className="contextPill"
-              type="button"
-              title="Remove Word context"
-              onClick={() => {
-                setAttachedContext(null);
-                setContextSummary("Chat only");
-              }}
-            >
-              <span>{contextSummary}</span>
-              <X size={12} />
-            </button>
-          ) : null}
-          {activeSkill ? (
-            <button
-              className="skillPill"
-              type="button"
-              title="Remove skill"
-              onClick={() => setActiveSkill(null)}
-            >
-              <span>{activeSkill.label}</span>
-              <X size={12} />
-            </button>
-          ) : null}
           <button
             type="button"
             className="modelButton"
             aria-label="Open model options"
-            onClick={() => setComposerMenu(composerMenu === "model" ? null : "model")}
+            aria-expanded={composerMenu === "model"}
+            onClick={() => {
+              const nextMenu = composerMenu === "model" ? null : "model";
+              setComposerMenu(nextMenu);
+              setModelListOpen(false);
+            }}
           >
             <span>{modelLabel(settings.model)}</span>
-            <ChevronDown size={17} />
+            <ChevronDown size={14} />
           </button>
           <button
             type="submit"
             className="sendButton"
             aria-label="Send"
-            disabled={isGenerating || !prompt.trim()}
+            disabled={isGenerating || !canSubmit}
           >
             <ArrowUp size={20} />
           </button>
@@ -1204,19 +1616,59 @@ export function App() {
             </div>
             {history.length ? (
               <div className="historyList">
-                {history.map((item) => (
-                  <button key={item.id} type="button" onClick={() => restoreConversation(item)}>
-                    <span>{item.title}</span>
-                    <small>{new Date(item.createdAt).toLocaleString()}</small>
-                  </button>
-                ))}
-                <button type="button" className="dangerButton" onClick={() => saveHistory([])}>
+                {(() => {
+                  const currentDocItems = history.filter(
+                    (item) => !item.documentFingerprint || item.documentFingerprint === currentDocFingerprint,
+                  );
+                  const otherDocItems = history.filter(
+                    (item) => item.documentFingerprint && item.documentFingerprint !== currentDocFingerprint,
+                  );
+
+                  function renderHistoryItem(item: ConversationSnapshot) {
+                    return (
+                      <div className="historyItem" key={item.id}>
+                        <button
+                          className="historyRestore"
+                          type="button"
+                          aria-pressed={selectedHistoryId === item.id}
+                          onClick={() => restoreConversation(item)}
+                        >
+                          <span>{item.title}</span>
+                          <small>{formatClosedMinute(item.closedAt ?? item.createdAt)}</small>
+                        </button>
+                        <button
+                          type="button"
+                          className="historyDelete"
+                          aria-label="Delete history item"
+                          onClick={() => deleteHistoryItem(item.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      {currentDocItems.map(renderHistoryItem)}
+                      {otherDocItems.length ? (
+                        <>
+                          <div style={{ fontSize: 10, fontWeight: 760, color: "var(--aw-muted)", padding: "6px 4px 2px" }}>
+                            Other documents
+                          </div>
+                          {otherDocItems.map(renderHistoryItem)}
+                        </>
+                      ) : null}
+                    </>
+                  );
+                })()}
+                <button type="button" className="clearHistoryButton" onClick={() => saveHistory([])}>
                   <Trash2 size={15} />
-                  Clear history
+                  Clear All History
                 </button>
               </div>
             ) : (
-              <p className="drawerNote">No saved conversations yet.</p>
+              <p className="drawerNote">No archived session yet.</p>
             )}
           </aside>
         </div>
@@ -1239,82 +1691,142 @@ export function App() {
             </div>
 
             <section className="drawerSection">
-              <div className="sectionTitle">Route</div>
-              <div className="routeSwitch" role="group" aria-label="Provider route">
+              <div className="sectionTitle">Prefer Names</div>
+              <label>
+                User Role
+                <input
+                  value={settings.userName}
+                  onChange={(event) => saveSettings({ ...settings, userName: event.target.value })}
+                />
+              </label>
+              <label>
+                Assistant Role
+                <input
+                  value={settings.assistantName}
+                  onChange={(event) =>
+                    saveSettings({ ...settings, assistantName: event.target.value })
+                  }
+                />
+              </label>
+            </section>
+
+            <section className="drawerSection">
+              <div className="sectionTitle">API Route</div>
+              <div className="routeSwitch" role="group" aria-label="API Route">
                 <button
                   type="button"
                   className={settings.provider === "claude2api" ? "selected" : ""}
-                  onClick={() => saveSettings({ ...settings, provider: "claude2api" })}
+                  onClick={() => {
+                    saveSettings({ ...settings, provider: "claude2api" });
+                    setTestStatus("");
+                  }}
                 >
-                  Claude2API
+                  Claude Web
                 </button>
                 <button
                   type="button"
                   className={settings.provider === "compatible" ? "selected" : ""}
-                  onClick={() => saveSettings({ ...settings, provider: "compatible" })}
+                  onClick={() => {
+                    saveSettings({ ...settings, provider: "compatible" });
+                    setTestStatus("");
+                  }}
                 >
-                  Compatible API
+                  Custom API
                 </button>
               </div>
             </section>
 
             {settings.provider === "claude2api" ? (
               <section className="drawerSection">
-                <div className="sectionTitle">Service</div>
+                <div className="sectionTitle">API Service</div>
                 <label>
-                  Proxy URL
-                  <input
-                    value={settings.baseUrl}
-                    onChange={(event) => saveSettings({ ...settings, baseUrl: event.target.value })}
-                  />
+                  URL
+                  <span className="inputShell">
+                    <input
+                      value={
+                        settings.baseUrl === DEFAULT_SETTINGS.baseUrl ? "Default" : settings.baseUrl
+                      }
+                      onChange={(event) =>
+                        saveSettings({
+                          ...settings,
+                          baseUrl:
+                            event.target.value.trim().toLowerCase() === "default"
+                              ? DEFAULT_SETTINGS.baseUrl
+                              : event.target.value,
+                        })
+                      }
+                    />
+                  </span>
                 </label>
                 <label>
-                  API key
-                  <input
-                    value={settings.apiKey}
-                    onChange={(event) => saveSettings({ ...settings, apiKey: event.target.value })}
-                  />
+                  API Key
+                  <span className="inputShell">
+                    <input
+                      value={
+                        settings.apiKey === DEFAULT_SETTINGS.apiKey ? "Default" : settings.apiKey
+                      }
+                      onChange={(event) =>
+                        saveSettings({
+                          ...settings,
+                          apiKey:
+                            event.target.value.trim().toLowerCase() === "default"
+                              ? DEFAULT_SETTINGS.apiKey
+                              : event.target.value,
+                        })
+                      }
+                    />
+                  </span>
                 </label>
-                <label>
-                  Admin key
-                  <input
-                    value={settings.adminKey}
-                    onChange={(event) =>
-                      saveSettings({ ...settings, adminKey: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="toggleRow">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoRouteAccounts}
-                    onChange={(event) =>
-                      saveSettings({ ...settings, autoRouteAccounts: event.target.checked })
-                    }
-                  />
-                  <span>Auto-route when an account is limited</span>
-                </label>
-                <div className="buttonRow">
+                <details className="advancedSettings">
+                  <summary>Advanced</summary>
+                  <label>
+                    Admin Key
+                    <input
+                      value={settings.adminKey}
+                      onChange={(event) =>
+                        saveSettings({ ...settings, adminKey: event.target.value })
+                      }
+                    />
+                  </label>
+                </details>
+                <div className="serviceActions">
+                  <button
+                    type="button"
+                    className={`routeActionButton ${settings.autoRouteAccounts ? "active" : ""}`}
+                    aria-pressed={settings.autoRouteAccounts}
+                    onClick={() => {
+                      markConnectPanelSeen();
+                      saveSettings({
+                        ...settings,
+                        autoRouteAccounts: !settings.autoRouteAccounts,
+                      });
+                    }}
+                  >
+                    <Route size={15} />
+                    Auto Route
+                  </button>
                   <button
                     type="button"
                     className="primaryButton"
-                    onClick={() => void restartAndCheck()}
+                    onClick={() => {
+                      markConnectPanelSeen();
+                      void restartAndCheck();
+                    }}
                     disabled={isTesting}
                   >
                     <PlugZap size={15} />
-                    Restart & test
+                    Test
                   </button>
-                  <button type="button" className="ghostButton" onClick={openLogin}>
-                    <LogIn size={15} />
-                    Login
-                  </button>
+                  {testStatus ? (
+                    <span className={`testStatus ${testStatusTone(testStatus)}`}>{testStatus}</span>
+                  ) : null}
                 </div>
               </section>
             ) : (
               <section className="drawerSection">
-                <div className="sectionTitle">Compatible API</div>
+                <div className="sectionTitle">Custom API</div>
                 <label>
-                  Base URL
+                  URL
                   <input
                     placeholder="https://api.example.com"
                     value={settings.compatibleBaseUrl}
@@ -1324,7 +1836,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  Key
+                  API Key
                   <input
                     value={settings.compatibleApiKey}
                     onChange={(event) =>
@@ -1333,7 +1845,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  Sonnet map
+                  Model Mapping (Sonnet)
                   <input
                     value={settings.compatibleSonnetModel}
                     onChange={(event) =>
@@ -1342,7 +1854,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  Haiku map
+                  Model Mapping (Haiku)
                   <input
                     value={settings.compatibleHaikuModel}
                     onChange={(event) =>
@@ -1350,49 +1862,71 @@ export function App() {
                     }
                   />
                 </label>
-                <div className="buttonRow">
+                <div className="serviceActions">
                   <button
                     type="button"
                     className="primaryButton"
-                    onClick={() => void restartAndCheck()}
+                    onClick={() => {
+                      markConnectPanelSeen();
+                      void restartAndCheck();
+                    }}
                     disabled={isTesting}
                   >
                     <PlugZap size={15} />
-                    Test API
+                    Test
                   </button>
+                  {testStatus ? (
+                    <span className={`testStatus ${testStatusTone(testStatus)}`}>{testStatus}</span>
+                  ) : null}
                 </div>
               </section>
             )}
 
             {settings.provider === "claude2api" ? (
               <section className="drawerSection">
-                <div className="sectionTitle">Accounts</div>
+                <div className="sectionTitle">Accounts Management</div>
                 <div className="accountList">
                   {accounts.length ? (
-                    accounts.map((account) => (
-                      <div className="accountRow" key={account.organization_uuid}>
-                        <div>
-                          <strong>{account.organization_uuid.slice(0, 8)}</strong>
-                          <span>{account.status}</span>
+                    accounts.map((account, index) => {
+                      const state = accountState(account);
+                      return (
+                        <div className="accountRow" key={account.organization_uuid}>
+                          <div>
+                            <strong>{accountDisplayName(index)}</strong>
+                            <span title={account.organization_uuid}>
+                              {account.organization_uuid.slice(0, 8)}
+                            </span>
+                          </div>
+                          <span className={`accountStatus ${state}`}>
+                            {state === "online" ? (
+                              "Online"
+                            ) : (
+                              <>
+                                <CircleAlert size={12} />
+                                Limited
+                              </>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            className="iconButton"
+                            aria-label="Remove account"
+                            onClick={() => void deleteAccount(account.organization_uuid)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="iconButton"
-                          aria-label="Remove account"
-                          onClick={() => void deleteAccount(account.organization_uuid)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="drawerNote">No account linked.</p>
                   )}
                 </div>
                 <label>
-                  Cookie
+                  New Cookie
                   <textarea
                     className="cookieInput"
+                    placeholder="Log in to claude.ai in your browser, copy the cookie, then paste it here."
                     value={newAccountCookie}
                     onChange={(event) => setNewAccountCookie(event.target.value)}
                   />
@@ -1404,13 +1938,13 @@ export function App() {
                   disabled={!newAccountCookie.trim() || isSavingAccount}
                 >
                   <UserPlus size={15} />
-                  Add account
+                  {isSavingAccount ? "Testing" : "Add Account"}
                 </button>
               </section>
             ) : null}
 
             <section className="drawerSection">
-              <div className="sectionTitle">Model</div>
+              <div className="sectionTitle">Model Setting</div>
               <label>
                 Model
                 <select
@@ -1425,7 +1959,7 @@ export function App() {
                 </select>
               </label>
               <label>
-                Thinking effort
+                Thinking Effort
                 <select
                   value={settings.thinkingEffort}
                   onChange={(event) =>
@@ -1444,44 +1978,16 @@ export function App() {
             </section>
 
             <section className="drawerSection">
-              <div className="sectionTitle">Names</div>
-              <label>
-                User role
-                <input
-                  value={settings.userName}
-                  onChange={(event) => saveSettings({ ...settings, userName: event.target.value })}
-                />
-              </label>
-              <label>
-                Assistant role
-                <input
-                  value={settings.assistantName}
-                  onChange={(event) =>
-                    saveSettings({ ...settings, assistantName: event.target.value })
-                  }
-                />
-              </label>
+              <div className="sectionTitle">A\W Profile</div>
+              <textarea
+                className="profileInput"
+                aria-label="A\\W Profile"
+                value={awProfile}
+                onChange={(event) => saveAwProfile(event.target.value)}
+              />
             </section>
 
           </aside>
-        </div>
-      ) : null}
-
-      {pendingWrite ? (
-        <div className="overlay" role="dialog" aria-modal="true" aria-label="Confirm writeback">
-          <section className="confirm">
-            <h2>{pendingWrite === "replace" ? "Replace selected text?" : "Insert response?"}</h2>
-            <p>Word content will change after confirmation. Review the response before continuing.</p>
-            <div className="preview">{lastAssistantMessage?.content}</div>
-            <div className="buttonRow">
-              <button type="button" className="primaryButton" onClick={confirmWrite}>
-                Confirm
-              </button>
-              <button type="button" className="ghostButton" onClick={() => setPendingWrite(null)}>
-                Cancel
-              </button>
-            </div>
-          </section>
         </div>
       ) : null}
     </main>

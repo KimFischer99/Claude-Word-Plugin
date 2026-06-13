@@ -8,9 +8,11 @@
   --aw-line-strong: rgba(31, 26, 22, 0.2);
   --aw-accent: #d55a33;
   --aw-accent-dark: #a94427;
+  --aw-title-accent: #8f321c;
   --aw-accent-soft: rgba(213, 90, 51, 0.12);
   --aw-danger: #9b3f25;
   --aw-shadow: 0 14px 34px rgba(31, 26, 22, 0.12);
+  --aw-min-pane-width: 330px;
   color: var(--aw-ink);
   background: var(--aw-soft);
   font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", Arial, sans-serif;
@@ -27,11 +29,11 @@ html,
 body,
 #root {
   min-height: 100%;
+  min-width: var(--aw-min-pane-width);
 }
 
 body {
   margin: 0;
-  min-width: 300px;
   background: #fbf7f1;
 }
 
@@ -55,6 +57,7 @@ button:disabled {
 .shell {
   position: relative;
   display: flex;
+  min-width: var(--aw-min-pane-width);
   min-height: 100dvh;
   max-height: 100dvh;
   flex-direction: column;
@@ -130,29 +133,33 @@ button:disabled {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .iconButton {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   align-items: center;
   justify-content: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(33, 38, 38, 0.7);
+  color: #8a827a;
 }
 
 .iconButton:hover,
 .toolButton:hover,
-.modelButton:hover,
 .contextPill:hover,
 .skillPill:hover,
-.actions button:hover,
+.assistantActions button:hover,
 .ghostButton:hover,
 .historyList button:hover {
+  background: rgba(31, 26, 22, 0.06);
+  color: var(--aw-accent-dark);
+}
+
+.modelButton:hover {
   background: rgba(31, 26, 22, 0.06);
   color: var(--aw-ink);
 }
@@ -174,6 +181,12 @@ button:disabled {
   color: var(--aw-ink);
   font-size: 13px;
   line-height: 1.25;
+}
+
+.drawer h2 {
+  color: var(--aw-title-accent);
+  font-size: 15px;
+  font-weight: 820;
 }
 
 .connectPanel p,
@@ -275,6 +288,51 @@ button:disabled {
   padding: 0 2px;
 }
 
+.messageTags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.message.assistant .messageTags {
+  justify-content: flex-start;
+}
+
+.messageTags span {
+  border: 1px solid rgba(213, 90, 51, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 250, 244, 0.9);
+  color: var(--aw-accent-dark);
+  font-size: 9.5px;
+  font-weight: 760;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.assistantActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 1px;
+}
+
+.assistantActions button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #8a827a;
+}
+
+.assistantActions button:hover {
+  color: var(--aw-accent-dark);
+}
+
 .messageContent h3 {
   font-size: 12.5px;
   font-weight: 780;
@@ -361,19 +419,16 @@ button:disabled {
   justify-items: center;
   align-self: stretch;
   flex: 1;
-  gap: 14px;
+  gap: 13px;
   min-height: 100%;
-  padding: 8vh 12px 12vh;
+  padding: 7vh 12px 12vh;
 }
 
 .emptyMark {
-  color: var(--aw-accent);
-  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", Arial, sans-serif;
-  font-size: 46px;
-  font-weight: 820;
-  letter-spacing: 0;
-  line-height: 1;
-  text-shadow: 0 10px 24px rgba(213, 90, 51, 0.14);
+  width: 92px;
+  height: 92px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 22px rgba(213, 90, 51, 0.16));
 }
 
 .emptyTitle {
@@ -381,10 +436,50 @@ button:disabled {
   margin: 0 auto;
   color: var(--aw-ink);
   font-family: ui-serif, Georgia, Cambria, "Times New Roman", "Microsoft YaHei", "微软雅黑", serif;
-  font-size: 23px;
-  font-weight: 720;
+  font-size: 21px;
+  font-weight: 560;
   line-height: 1.18;
   text-align: center;
+}
+
+.emptyCodeBlock {
+  display: inline-flex;
+  min-width: 198px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(213, 90, 51, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 253, 249, 0.74);
+  color: #5b5048;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  padding: 7px 9px;
+}
+
+.emptyCodePrompt {
+  color: var(--aw-accent-dark);
+}
+
+.emptyCodeCycle::after {
+  content: "read(selection)";
+  animation: aw-code-cycle 5.6s steps(1, end) infinite;
+}
+
+@keyframes aw-code-cycle {
+  0%,
+  26% {
+    content: "read(selection)";
+  }
+
+  27%,
+  58% {
+    content: "revise(tone)";
+  }
+
+  59%,
+  100% {
+    content: "summarize(document)";
+  }
 }
 
 .emptyRule {
@@ -394,18 +489,8 @@ button:disabled {
   background: var(--aw-accent);
 }
 
-.actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  border-top: 1px solid var(--aw-line);
-  padding-top: 6px;
-}
-
-.actions button,
 .primaryButton,
-.ghostButton,
-.dangerButton {
+.ghostButton {
   display: inline-flex;
   min-height: 32px;
   align-items: center;
@@ -416,7 +501,6 @@ button:disabled {
   font-weight: 750;
 }
 
-.actions button,
 .ghostButton {
   border: 1px solid var(--aw-line);
   background: rgba(255, 253, 249, 0.78);
@@ -443,19 +527,12 @@ button:disabled {
   min-width: 82px;
 }
 
-.notice,
 .error {
   margin-top: 8px;
   border-radius: 8px;
   font-size: 11px;
   line-height: 1.45;
   padding: 8px 9px;
-}
-
-.notice {
-  border: 1px solid rgba(213, 90, 51, 0.22);
-  background: rgba(255, 250, 244, 0.95);
-  color: var(--aw-accent-dark);
 }
 
 .error {
@@ -467,13 +544,13 @@ button:disabled {
 .composer {
   position: relative;
   display: grid;
-  gap: 7px;
-  margin-top: 7px;
+  gap: 6px;
+  margin-top: 6px;
   border: 1px solid rgba(31, 26, 22, 0.18);
   border-radius: 13px;
   background: var(--aw-raised);
   box-shadow: 0 8px 22px rgba(31, 26, 22, 0.05);
-  padding: 9px;
+  padding: 8px;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease;
@@ -486,13 +563,14 @@ button:disabled {
 
 .composer textarea {
   width: 100%;
-  min-height: 38px;
-  max-height: 110px;
+  min-height: 48px;
+  max-height: 148px;
+  caret-color: var(--aw-accent);
   resize: none;
   border: 0;
   background: transparent;
   color: var(--aw-ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
   outline: none;
@@ -507,6 +585,13 @@ button:disabled {
   display: flex;
   min-width: 0;
   align-items: center;
+  gap: 2px;
+}
+
+.composerTokens {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   gap: 5px;
 }
 
@@ -521,11 +606,20 @@ button:disabled {
 }
 
 .toolButton {
-  width: 32px;
+  width: 30px;
   flex: 0 0 auto;
   border-radius: 7px;
   background: transparent;
-  color: rgba(33, 38, 38, 0.66);
+  color: #8a827a;
+}
+
+.slashGlyph {
+  display: inline-block;
+  color: currentColor;
+  font-size: 17px;
+  font-weight: 780;
+  line-height: 1;
+  transform: skewX(-18deg) scaleY(1.02);
 }
 
 .toolButton.active {
@@ -536,25 +630,25 @@ button:disabled {
 .modelButton {
   margin-left: auto;
   min-width: 0;
-  max-width: 92px;
+  max-width: 88px;
   gap: 3px;
-  border: 1px solid rgba(213, 90, 51, 0.24);
-  border-radius: 999px;
-  background: var(--aw-accent-soft);
+  border-radius: 7px;
+  background: transparent;
   color: var(--aw-accent-dark);
-  font-size: 11px;
-  font-weight: 720;
-  padding: 0 5px 0 8px;
+  font-size: 11.5px;
+  font-weight: 760;
+  padding: 0 4px;
+}
+
+.modelButton svg {
+  color: #8d877f;
+  flex: 0 0 auto;
 }
 
 .modelButton span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.modelButton svg {
-  color: var(--aw-accent-dark);
 }
 
 .sendButton {
@@ -568,12 +662,11 @@ button:disabled {
 
 .composerMenu {
   position: absolute;
-  right: 8px;
   bottom: calc(100% + 6px);
-  left: 8px;
   z-index: 10;
   display: grid;
   gap: 4px;
+  width: min(224px, calc(100% - 16px));
   border: 1px solid var(--aw-line);
   border-radius: 10px;
   background: var(--aw-panel);
@@ -581,8 +674,20 @@ button:disabled {
   padding: 6px;
 }
 
-.composerMenu button,
-.historyList button {
+.composerMenu.commands {
+  left: 8px;
+}
+
+.composerMenu.context {
+  left: 44px;
+}
+
+.composerMenu.model {
+  right: 44px;
+  width: min(244px, calc(100% - 16px));
+}
+
+.composerMenu button {
   display: flex;
   min-height: 32px;
   width: 100%;
@@ -603,12 +708,50 @@ button:disabled {
   background: rgba(31, 26, 22, 0.06);
 }
 
-.composerMenu svg {
-  color: var(--aw-accent);
+.composerMenu button.selected {
+  background: var(--aw-accent-soft);
+  color: var(--aw-accent-dark);
+}
+
+.skillMenuItem.loaded {
+  color: var(--aw-ink);
+}
+
+.skillSlash {
+  color: var(--aw-accent-dark);
+  font-weight: 780;
+}
+
+.skillName {
+  color: var(--aw-ink);
+  font-weight: 650;
+}
+
+.skillMenuItem.disabled {
+  color: #9a9289;
+}
+
+.modelMenuToggle {
+  justify-content: space-between;
+  margin-top: 4px;
+  border: 1px solid rgba(213, 90, 51, 0.16) !important;
+  background: rgba(255, 250, 244, 0.72) !important;
+  color: var(--aw-accent-dark) !important;
+}
+
+.modelMenuToggle strong {
+  margin-left: auto;
+  color: var(--aw-ink);
+  font-size: 11px;
+  font-weight: 760;
 }
 
 .trailingIcon {
   margin-left: auto;
+}
+
+.composerMenu svg {
+  color: var(--aw-accent);
 }
 
 .menuEmpty {
@@ -622,7 +765,7 @@ button:disabled {
   display: inline-flex;
   min-width: 0;
   max-width: min(142px, 34vw);
-  min-height: 29px;
+  min-height: 27px;
   align-items: center;
   gap: 4px;
   border-radius: 999px;
@@ -637,10 +780,16 @@ button:disabled {
   color: var(--aw-accent-dark);
 }
 
+.contextPill.quote {
+  border-color: rgba(31, 26, 22, 0.14);
+  background: rgba(31, 26, 22, 0.045);
+  color: #5c534b;
+}
+
 .skillPill {
-  border: 1px solid rgba(31, 26, 22, 0.12);
-  background: rgba(31, 26, 22, 0.05);
-  color: var(--aw-ink);
+  border: 1px solid rgba(213, 90, 51, 0.24);
+  background: var(--aw-accent-soft);
+  color: var(--aw-accent-dark);
 }
 
 .contextPill span,
@@ -652,13 +801,14 @@ button:disabled {
 
 .menuSectionLabel,
 .sectionTitle {
-  color: var(--aw-muted);
-  font-size: 10px;
+  color: var(--aw-accent-dark);
+  font-size: 11.5px;
   font-weight: 820;
   letter-spacing: 0;
 }
 
 .menuSectionLabel {
+  font-size: 10px;
   padding: 5px 6px 1px;
 }
 
@@ -729,18 +879,38 @@ button:disabled {
 .drawerSection {
   display: grid;
   gap: 10px;
-  border: 1px solid rgba(31, 26, 22, 0.1);
+  border: 1px solid transparent;
   border-radius: 9px;
-  background: rgba(255, 253, 249, 0.68);
+  background:
+    linear-gradient(var(--aw-panel), var(--aw-panel)) padding-box,
+    linear-gradient(135deg, rgba(213, 90, 51, 0.46), rgba(213, 90, 51, 0.08))
+      border-box;
   padding: 10px;
+}
+
+.advancedSettings {
+  display: grid;
+  gap: 8px;
+}
+
+.advancedSettings summary {
+  color: var(--aw-muted);
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 740;
 }
 
 .drawer label {
   display: grid;
   gap: 6px;
   color: var(--aw-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
+}
+
+.inputShell {
+  position: relative;
+  display: block;
 }
 
 .drawer input,
@@ -768,13 +938,31 @@ button:disabled {
   padding: 9px 10px;
 }
 
+.drawer textarea::placeholder {
+  color: #9a9289;
+}
+
+.profileInput {
+  min-height: 128px !important;
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", Arial, sans-serif;
+  text-align: justify;
+}
+
+.profileInput,
+.sectionTitle {
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", Arial, sans-serif;
+}
+
 .routeSwitch {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  border: 1px solid var(--aw-line);
+  border: 1px solid transparent;
   border-radius: 9px;
-  background: rgba(31, 26, 22, 0.045);
+  background:
+    linear-gradient(rgba(255, 253, 249, 0.88), rgba(255, 253, 249, 0.88)) padding-box,
+    linear-gradient(135deg, rgba(213, 90, 51, 0.5), rgba(213, 90, 51, 0.08))
+      border-box;
   padding: 3px;
 }
 
@@ -791,19 +979,54 @@ button:disabled {
 .routeSwitch button.selected {
   background: var(--aw-panel);
   box-shadow: 0 1px 4px rgba(31, 26, 22, 0.09);
-  color: var(--aw-ink);
+  color: var(--aw-accent-dark);
 }
 
-.toggleRow {
-  display: flex !important;
-  grid-template-columns: none;
+.serviceActions {
+  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 8px !important;
+  gap: 7px;
 }
 
-.toggleRow input {
-  width: 16px;
-  min-height: 16px;
+.routeActionButton {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 26, 22, 0.14);
+  background: rgba(31, 26, 22, 0.05);
+  color: #7d766f;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 0 10px;
+}
+
+.routeActionButton.active {
+  border-color: var(--aw-accent);
+  background: var(--aw-accent);
+  color: #fffdf9;
+}
+
+.routeActionButton.active:hover {
+  background: var(--aw-accent-dark);
+}
+
+.testStatus {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--aw-muted);
+  font-size: 10.5px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.testStatus.online,
+.testStatus.testing {
+  color: var(--aw-accent-dark);
 }
 
 .accountList,
@@ -813,10 +1036,10 @@ button:disabled {
 }
 
 .accountRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 34px;
   min-height: 42px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   border: 1px solid var(--aw-line);
   border-radius: 8px;
@@ -838,7 +1061,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.accountRow span {
+.accountRow div > span {
   display: block;
   overflow: hidden;
   color: var(--aw-muted);
@@ -848,13 +1071,87 @@ button:disabled {
   white-space: nowrap;
 }
 
-.historyList button {
+.accountStatus {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: #8f887f;
+  font-size: 10.5px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.accountStatus.online {
+  color: var(--aw-accent-dark);
+}
+
+.accountStatus svg {
+  flex: 0 0 auto;
+}
+
+.historyItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  border: 1px solid rgba(213, 90, 51, 0.16);
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 4px;
+}
+
+.historyRestore,
+.historyDelete,
+.clearHistoryButton {
+  display: flex;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--aw-ink);
+}
+
+.historyRestore {
+  position: relative;
   align-items: flex-start;
   flex-direction: column;
   justify-content: center;
   min-height: 52px;
-  border: 1px solid var(--aw-line);
-  background: rgba(255, 253, 249, 0.72);
+  gap: 3px;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.historyRestore::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
+}
+
+.historyRestore[aria-pressed="true"] {
+  background: linear-gradient(90deg, rgba(213, 90, 51, 0.12), rgba(255, 253, 249, 0));
+  color: var(--aw-accent-dark);
+}
+
+.historyRestore[aria-pressed="true"]::before {
+  background: var(--aw-accent);
+}
+
+.historyRestore span {
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.historyDelete {
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  color: var(--aw-accent-dark);
 }
 
 .historyList span,
@@ -867,16 +1164,20 @@ button:disabled {
 
 .historyList small {
   color: var(--aw-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
 }
 
-.dangerButton {
-  flex-direction: row !important;
-  min-height: 38px !important;
-  align-items: center !important;
-  border-color: rgba(155, 63, 37, 0.22) !important;
-  color: var(--aw-danger) !important;
+.clearHistoryButton {
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(31, 26, 22, 0.14);
+  background: rgba(31, 26, 22, 0.04);
+  color: #77716a;
+  font-size: 11px;
+  font-weight: 750;
 }
 
 .confirm {
@@ -885,20 +1186,6 @@ button:disabled {
   border-radius: 10px;
   margin: 14px;
   padding: 14px;
-}
-
-.preview {
-  max-height: 220px;
-  overflow: auto;
-  border: 1px solid var(--aw-line);
-  border-radius: 8px;
-  background: #fbfaf7;
-  color: var(--aw-ink);
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 12px 0;
-  padding: 10px;
-  white-space: pre-wrap;
 }
 
 .srOnly {
@@ -929,13 +1216,18 @@ textarea:focus-visible {
 
 .iconButton svg,
 .toolButton svg,
-.modelButton svg,
-.actions svg,
+.assistantActions svg,
 .composerMenu svg,
+.routeActionButton svg,
 .primaryButton svg,
 .ghostButton svg {
   width: 16px;
   height: 16px;
+}
+
+.topbarActions .iconButton svg {
+  width: 20px;
+  height: 20px;
 }
 
 .sendButton svg {
@@ -961,7 +1253,8 @@ textarea:focus-visible {
   }
 
   .emptyMark {
-    font-size: 40px;
+    width: 82px;
+    height: 82px;
   }
 
   .contextPill,

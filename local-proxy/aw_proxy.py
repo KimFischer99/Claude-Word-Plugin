@@ -1,11 +1,9 @@
 from contextlib import asynccontextmanager
 import base64
-import os
 import random
 import string
 import time
 from typing import Any, List
-import webbrowser
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -243,16 +241,6 @@ async def auth_status(authorization: str | None = Header(default=None)) -> dict[
     }
 
 
-@app.post("/auth/open")
-async def open_auth_page(authorization: str | None = Header(default=None)) -> dict[str, str]:
-    _require_admin_key(authorization)
-
-    url = f"http://127.0.0.1:{settings.port}"
-    if os.environ.get("AW_DISABLE_BROWSER_OPEN") != "1":
-        webbrowser.open(url)
-    return {"url": url}
-
-
 @app.post("/service/restart", response_model=ServiceRestartResponse)
 async def restart_service(
     authorization: str | None = Header(default=None),
@@ -273,7 +261,7 @@ async def models() -> dict[str, list[dict[str, str]]]:
     return {
         "data": [
             {"id": "claude-sonnet-4-6", "name": "Sonnet"},
-            {"id": "claude-3-5-haiku-20241022", "name": "Haiku"},
+            {"id": "claude-haiku-4-5", "name": "Haiku"},
         ]
     }
 

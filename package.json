@@ -4,6 +4,18 @@
   "version": "0.1.0",
   "description": "A\\W Word task pane MVP with a local Claude-compatible proxy.",
   "scripts": {
+    "dev:control": "./scripts/dev-control.sh",
+    "dev:start": "./scripts/dev-control.sh start",
+    "dev:stop": "./scripts/dev-control.sh stop",
+    "dev:restart": "./scripts/dev-control.sh restart",
+    "dev:status": "./scripts/dev-control.sh status",
+    "dev:watch": "./scripts/dev-control.sh word-watch",
+    "dev:session": "./scripts/dev-control.sh word-session",
+    "dev:agent-install": "./scripts/dev-control.sh agent-install",
+    "dev:agent-uninstall": "./scripts/dev-control.sh agent-uninstall",
+    "dev:agent-status": "./scripts/dev-control.sh agent-status",
+    "dev:force-start": "./scripts/dev-control.sh force-start",
+    "dev:force-restart": "./scripts/dev-control.sh force-restart",
     "dev:addin": "npm --workspace addin run dev",
     "build": "npm --workspace addin run build",
     "typecheck": "npm --workspace addin run typecheck"

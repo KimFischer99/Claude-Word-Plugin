@@ -1,17 +1,17 @@
 [
   {
     "id": "skill-one",
-    "label": "Draft",
+    "label": "summarize",
     "path": "/skills/skill-one/SKILL.md"
   },
   {
     "id": "skill-two",
-    "label": "Summarize",
+    "label": "humanize",
     "path": "/skills/skill-two/SKILL.md"
   },
   {
     "id": "skill-three",
-    "label": "Review",
+    "label": "review",
     "path": "/skills/skill-three/SKILL.md"
   }
 ]

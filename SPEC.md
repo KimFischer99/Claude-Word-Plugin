@@ -40,7 +40,7 @@ Claude Free account session / compatible model provider
 ### 3.1 Office.js 插件骨架
 
 - 已提供 `addin/manifest.xml`，可在 Word for Mac 通过本地 manifest 侧载。
-- manifest 使用 `ReadWriteDocument` 权限。
+- manifest 使用 `ReadDocument` 权限。
 - 插件入口为 `https://localhost:3000/index.html`。
 - Vite 开发服务提供 HTTPS，并代理 `/aw-proxy` 到 `http://127.0.0.1:5201`。
 
@@ -51,26 +51,28 @@ Claude Free account session / compatible model provider
 - 已实现启动欢迎态，使用橙色 A\W 字符标识与欢迎语。
 - 已实现聊天消息流、输入框、发送按钮和生成中状态。
 - 已实现 `/` 快捷任务菜单、`@` Word 上下文菜单和模型菜单。
+- 已实现多段 Selection、Document 和 Quote token 注入。
+- 已实现 assistant 单轮回复的 Retry、Copy 和 Quote 图标动作。
 - 已实现本地历史保存和恢复，当前存储在浏览器 `localStorage`。
-- 已实现设置抽屉，支持 Claude2API 路由和 compatible API 路由切换。
-- 已实现模型名称、thinking effort、显示名称、账户 cookie 等基础配置。
+- 已实现设置抽屉，支持 Claude Web 路由和 Custom API 路由切换。
+- 已实现模型名称、Thinking Effort、Prefer Names、账户 New Cookie 和 A\W Profile 等基础配置。
 
 ### 3.3 Word 文档交互
 
 - 已实现当前选区读取。
 - 已实现文档正文读取，并按 `MAX_DOCUMENT_CHARS` 截断。
-- 已实现发送时自动读取最佳上下文：优先选区，选区为空时使用文档正文。
-- 已实现写回确认弹窗。
-- 已实现插入到当前选择位置、替换当前选区和复制回复。
+- 已实现点击 `@` 时优先读取当前选区；无选区时展示 Selection/Document 菜单。
+- 已实现最多 5 段 Selection token，第二段开始自动显示为 Selection 01、Selection 02 等。
+- 已移除 Word 写回按钮和写回确认弹窗；当前不提供插入或替换 Word 正文的前端入口。
 
 当前尚未实现完整段落级索引、可点击引用定位、批注/修订集成和 Track Changes 专用写回。
 
 ### 3.4 模型调用
 
-- Claude2API 路由默认通过 `/aw-proxy/v1/messages` 调用本地代理。
-- Compatible API 路由支持用户配置 Base URL、API key、Sonnet map 和 Haiku map。
+- Claude Web 路由默认通过 `/aw-proxy/v1/messages` 调用本地代理。
+- Custom API 路由支持用户配置 URL、API Key、Model Mapping (Sonnet) 和 Model Mapping (Haiku)。
 - 当前默认 Sonnet model id 为 `claude-sonnet-4-6`。
-- Compatible API 响应只读取 `content` 里的 text block，因此不会把 thinking block 当作最终回复显示。
+- Custom API 响应只读取 `content` 里的 text block，因此不会把 thinking block 当作最终回复显示。
 - 无文档上下文时支持直接聊天，不再强制要求 Word 文本。
 
 ### 3.5 本地代理
@@ -80,7 +82,6 @@ Claude Free account session / compatible model provider
 - 已提供：
   - `GET /health`
   - `GET /auth/status`
-  - `POST /auth/open`
   - `POST /service/restart`
   - `GET /models`
   - upstream `POST /v1/messages`
@@ -94,19 +95,61 @@ Claude Free account session / compatible model provider
 - `scripts/setup-proxy.sh`：创建 Python venv、安装代理依赖、写入本地 `.env` 和 `runtime.json`。
 - `scripts/start-proxy.sh`：启动本地代理。
 - `scripts/start-addin.sh`：启动 Vite add-in。
+- `scripts/dev-control.sh`：统一管理开发态 add-in 和 proxy 端口，支持 `start`、`stop`、`restart`、`status`、`word-watch`、`word-session`、`force-start`、`force-restart`。
 - `scripts/sideload-mac.sh`：复制 manifest 到 Word for Mac 常见侧载目录。
 
 ## 4. 当前运行方式
 
-开发态需要两个进程：
+开发态推荐使用 Word 生命周期 watcher。目标流程是：
 
-```bash
-./scripts/start-proxy.sh
+```text
+端口默认关闭 -> 打开 Word -> 端口打开 -> 使用插件 -> 关闭插件 -> 完全 quit Word -> 端口关闭
 ```
 
+安装并加载 watcher：
+
 ```bash
-npm run dev:addin
+npm run dev:agent-install
 ```
+
+`dev:agent-install` 会安装当前用户的 macOS LaunchAgent，并把 watcher 加载到后台。watcher 自身常驻，但端口默认关闭；检测到 Microsoft Word 运行后才确保：
+
+- add-in HTTPS dev server: `https://localhost:3000`
+- local proxy: `http://127.0.0.1:5201`
+
+Word 完全退出并经过 `AW_WORD_GRACE_SECONDS` 后，watcher 会停止脚本管理的端口。关闭插件面板不立即杀端口，因为 Office.js task pane 的 unload 生命周期不适合作为本机进程控制边界。
+
+`dev:agent-install`、`dev:start` 和 `dev:restart` 都不直接打开端口。日常流程中端口必须由 Word 运行状态触发：
+
+```text
+端口关闭 -> watcher 等待 -> Word 打开 -> 端口打开 -> Word 完全退出 -> 端口关闭
+```
+
+手动强制启动端口仅用于调试：
+
+```bash
+npm run dev:force-start
+```
+
+查看状态：
+
+```bash
+npm run dev:status
+```
+
+停止脚本管理的进程：
+
+```bash
+npm run dev:stop
+```
+
+也可以使用 Word 会话模式；它会先打开 Microsoft Word，再进入同一个 watcher：
+
+```bash
+npm run dev:session
+```
+
+Office.js task pane 本身不负责本机进程生命周期；插件启动时只做 health check，端口生命周期由本地 helper 或开发脚本负责。
 
 首次使用或依赖缺失时：
 
@@ -121,7 +164,7 @@ npm install
 ## 5. 当前限制
 
 - 还不是一键安装包。
-- 还不是一键启动流程。
+- 还不是正式一键安装/启动流程；当前只有开发态统一启停脚本。
 - 用户仍需要本机 Node、Python、Office add-in dev cert 和 Word 侧载目录。
 - 本地代理依赖 Claude Free account cookie，稳定性受上游网页/会话机制影响。
 - 历史记录仍是浏览器 `localStorage`，未按 Word 文档 fingerprint 分组。
