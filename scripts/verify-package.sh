@@ -18,7 +18,7 @@ else
   PAYLOAD_ROOT=""
 fi
 
-PAYLOAD_LIST="$(pkgutil --payload-files "$PKG_FILE")"
+PAYLOAD_LIST="$(pkgutil --payload-files "$PKG_FILE" | sed 's#^\./##')"
 
 require_payload() {
   local path="$1"
@@ -33,6 +33,11 @@ require_payload "Library/Application Support/AW/bin/aw-word-watcher"
 require_payload "Library/Application Support/AW/static/index.html"
 require_payload "Library/Application Support/AW/manifest.xml"
 require_payload "Library/Application Support/AW/uninstall.sh"
+
+if printf '%s\n' "$PAYLOAD_LIST" | grep -F "/._" >/dev/null; then
+  echo "FAIL: package payload contains AppleDouble metadata files" >&2
+  exit 1
+fi
 
 if [ -n "$PAYLOAD_ROOT" ]; then
   MANIFEST="$(find "$PAYLOAD_ROOT" -path '*/Library/Application Support/AW/manifest.xml' -type f | head -n 1)"

@@ -11,6 +11,8 @@ OUTPUT_PKG="$ROOT_DIR/A-W-Installer-${VERSION}.pkg"
 PROXY_DIR="$ROOT_DIR/local-proxy"
 VENV_DIR="$PROXY_DIR/.venv"
 
+export COPYFILE_DISABLE=1
+
 cd "$ROOT_DIR"
 
 "$ROOT_DIR/scripts/check-sanitized.sh"
