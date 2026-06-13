@@ -25,7 +25,8 @@ type ComposerMenu = "commands" | "context" | "model" | null;
 type ModelChoice = "auto" | "sonnet" | "haiku";
 type ThinkingEffort = "auto" | "low" | "medium" | "high";
 type ProviderMode = "claude2api" | "compatible";
-type AttachmentKind = "selection" | "document" | "quote";
+type AttachmentKind = "selection" | "document" | "quote" | "web";
+type Language = "en" | "zh-CN";
 
 interface ProxySettings {
   provider: ProviderMode;
@@ -38,9 +39,16 @@ interface ProxySettings {
   compatibleHaikuModel: string;
   model: ModelChoice;
   thinkingEffort: ThinkingEffort;
+  language: Language;
   autoRouteAccounts: boolean;
   userName: string;
   assistantName: string;
+}
+
+interface RuntimeConfig {
+  baseUrl: string;
+  apiKey: string;
+  adminKey: string;
 }
 
 interface DocumentContext {
@@ -110,6 +118,14 @@ interface ComposerAttachment extends MessageAttachment {
   id: string;
 }
 
+interface WebFetchResult {
+  url: string;
+  title: string;
+  text: string;
+  chars: number;
+  truncated: boolean;
+}
+
 const DEFAULT_SETTINGS: ProxySettings = {
   provider: "claude2api",
   baseUrl: "/aw-proxy",
@@ -121,9 +137,16 @@ const DEFAULT_SETTINGS: ProxySettings = {
   compatibleHaikuModel: "deepseek-chat",
   model: "sonnet",
   thinkingEffort: "auto",
-  autoRouteAccounts: true,
+  language: "en",
+  autoRouteAccounts: false,
   userName: "You",
   assistantName: "A\\W",
+};
+
+const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  baseUrl: "/aw-proxy",
+  apiKey: "",
+  adminKey: "",
 };
 
 interface RequestProfile {
@@ -131,7 +154,8 @@ interface RequestProfile {
   effort: ThinkingEffort;
 }
 
-const MAX_DOCUMENT_CHARS = 12000;
+const MAX_DOCUMENT_CHARS = 50000;
+const MAX_WEB_URLS = 3;
 const LEGACY_SONNET_MODELS = new Set(["claude-sonnet-4-20250514", "claude-sonnet-4-6"]);
 const LEGACY_HAIKU_MODELS = new Set(["claude-3-5-haiku-20241022", "claude-haiku-4-5"]);
 const LEGACY_LOCAL_PROXY_URLS = new Set([
@@ -152,6 +176,149 @@ const quickTasks: QuickTask[] = [
     label: "review",
   },
 ];
+
+const UI_TEXT = {
+  en: {
+    addAccount: "Add Account",
+    advanced: "Advanced",
+    apiKey: "API Key",
+    apiRoute: "API Route",
+    apiService: "API Service",
+    accountsManagement: "Accounts Management",
+    assistantActions: "Assistant actions",
+    assistantRole: "Assistant Role",
+    attachWordContext: "Attach Word context",
+    attachedContext: "Attached context",
+    awProfile: "A\\W Profile",
+    autoRoute: "Auto Route",
+    check: "Check",
+    checkService: "Check service",
+    checking: "Checking",
+    clearAllHistory: "Clear All History",
+    closeHistory: "Close history",
+    closeSettings: "Close settings",
+    connected: "Connected",
+    connectAccount: "Connect account",
+    connectAccountNote: "Add a Claude Free account cookie in Settings, then test the local link.",
+    conversation: "Conversation",
+    copy: "Copy",
+    customApi: "Custom API",
+    default: "Default",
+    deleteHistoryItem: "Delete history item",
+    document: "Document",
+    emptyTitle: "How can I help you with this document?",
+    history: "History",
+    language: "Language",
+    limited: "Limited",
+    cookiePlaceholder: "Log in to claude.ai in your browser, copy the cookie, then paste it here.",
+    message: "Message",
+    model: "Model",
+    modelMappingHaiku: "Model Mapping (Haiku)",
+    modelMappingSonnet: "Model Mapping (Sonnet)",
+    modelSetting: "Model Setting",
+    newAccountCookie: "New Cookie",
+    newConversation: "New conversation",
+    noAccountLinked: "No account linked.",
+    noArchivedSession: "No archived session yet.",
+    noSkillsFound: "No skills found",
+    notLinked: "Not linked",
+    offline: "Offline",
+    online: "Online",
+    openHistory: "Open history",
+    openModelOptions: "Open model options",
+    openSettings: "Open settings",
+    openTaskCommands: "Open task commands",
+    otherDocuments: "Other documents",
+    placeholder: "Ask anything about this document...",
+    preferNames: "Prefer Names",
+    quote: "Quote",
+    removeAccount: "Remove account",
+    removeSkill: "Remove skill",
+    retry: "Retry",
+    selection: "Selection",
+    send: "Send",
+    settings: "Settings",
+    tasks: "Tasks",
+    test: "Test",
+    testing: "Testing",
+    thinking: "Thinking",
+    thinkingEffort: "Thinking Effort",
+    userRole: "User Role",
+    zhChinese: "简体中文",
+    english: "English",
+  },
+  "zh-CN": {
+    addAccount: "添加账户",
+    advanced: "高级",
+    apiKey: "API Key",
+    apiRoute: "API 路由",
+    apiService: "API 服务",
+    accountsManagement: "账户管理",
+    assistantActions: "助手操作",
+    assistantRole: "助手角色",
+    attachWordContext: "附加 Word 上下文",
+    attachedContext: "已附加上下文",
+    awProfile: "A\\W 配置",
+    autoRoute: "自动路由",
+    check: "检查",
+    checkService: "检查服务",
+    checking: "检查中",
+    clearAllHistory: "清空全部历史",
+    closeHistory: "关闭历史",
+    closeSettings: "关闭设置",
+    connected: "已连接",
+    connectAccount: "连接账户",
+    connectAccountNote: "在设置中添加 Claude Free 账户 cookie，然后测试本地连接。",
+    conversation: "对话",
+    copy: "复制",
+    customApi: "Custom API",
+    default: "默认",
+    deleteHistoryItem: "删除历史项",
+    document: "文档",
+    emptyTitle: "How can I help you with this document?",
+    history: "历史",
+    language: "语言",
+    limited: "受限",
+    cookiePlaceholder: "在浏览器登录 claude.ai，复制 cookie，然后粘贴到这里。",
+    message: "消息",
+    model: "Model",
+    modelMappingHaiku: "模型映射 (Haiku)",
+    modelMappingSonnet: "模型映射 (Sonnet)",
+    modelSetting: "Model 设置",
+    newAccountCookie: "New Cookie",
+    newConversation: "新建对话",
+    noAccountLinked: "尚未连接账户。",
+    noArchivedSession: "还没有归档会话。",
+    noSkillsFound: "未找到技能",
+    notLinked: "未连接",
+    offline: "离线",
+    online: "在线",
+    openHistory: "打开历史",
+    openModelOptions: "打开 Model 选项",
+    openSettings: "打开设置",
+    openTaskCommands: "打开任务命令",
+    otherDocuments: "其他文档",
+    placeholder: "询问关于这份文档的任何问题...",
+    preferNames: "偏好称呼",
+    quote: "引用",
+    removeAccount: "移除账户",
+    removeSkill: "移除技能",
+    retry: "重试",
+    selection: "选区",
+    send: "发送",
+    settings: "设置",
+    tasks: "任务",
+    test: "测试",
+    testing: "测试中",
+    thinking: "思考中",
+    thinkingEffort: "Thinking Effort",
+    userRole: "用户角色",
+    zhChinese: "简体中文",
+    english: "English",
+  },
+} as const;
+
+type UiTextKey = keyof typeof UI_TEXT.en;
 
 function loadSettings(): ProxySettings {
   try {
@@ -174,6 +341,10 @@ function loadSettings(): ProxySettings {
       settings.provider = "claude2api";
     }
 
+    if (!["en", "zh-CN"].includes(settings.language)) {
+      settings.language = DEFAULT_SETTINGS.language;
+    }
+
     if (LEGACY_LOCAL_PROXY_URLS.has(settings.baseUrl)) {
       settings.baseUrl = DEFAULT_SETTINGS.baseUrl;
     }
@@ -181,7 +352,7 @@ function loadSettings(): ProxySettings {
     settings.userName =
       !settings.userName || settings.userName === "YOU" ? DEFAULT_SETTINGS.userName : settings.userName;
     settings.assistantName = settings.assistantName || DEFAULT_SETTINGS.assistantName;
-    settings.autoRouteAccounts = settings.autoRouteAccounts ?? true;
+    settings.autoRouteAccounts = settings.autoRouteAccounts ?? false;
     return settings;
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -221,6 +392,14 @@ function modelLabel(model: ModelChoice) {
 
 function effortLabel(effort: ThinkingEffort) {
   return effort[0].toUpperCase() + effort.slice(1);
+}
+
+function skillLabel(label: string, language: Language = "en") {
+  if (language !== "zh-CN") return label;
+  if (label === "summarize") return "摘要";
+  if (label === "humanize") return "润色";
+  if (label === "review") return "审阅";
+  return label;
 }
 
 function resolveModelId(settings: ProxySettings) {
@@ -294,36 +473,77 @@ function normalizeMessagesEndpoint(baseUrl: string) {
   return `${trimmed}/v1/messages`;
 }
 
+function normalizeServiceEndpoint(baseUrl: string, path: string) {
+  const trimmedBaseUrl = baseUrl.trim().replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${trimmedBaseUrl}${normalizedPath}`;
+}
+
+function extractWebUrls(value: string) {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const matches = value.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+
+  for (const match of matches) {
+    const cleaned = match.replace(/[),.;:!?}\]]+$/g, "");
+    try {
+      const url = new URL(cleaned);
+      if (!["http:", "https:"].includes(url.protocol) || seen.has(url.href)) continue;
+      seen.add(url.href);
+      urls.push(url.href);
+      if (urls.length >= MAX_WEB_URLS) break;
+    } catch {
+      // Ignore malformed URL-looking text.
+    }
+  }
+
+  return urls;
+}
+
+function isDefaultInput(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "default" || normalized === "默认";
+}
+
+function isAttachedContextPlaceholder(value: string) {
+  return value === UI_TEXT.en.attachedContext || value === UI_TEXT["zh-CN"].attachedContext;
+}
+
 function explainError(error: unknown) {
   if (error instanceof Error) return error.message;
   return "Something went wrong. Check the service and try again.";
 }
 
-function selectionLabel(index: number, total: number) {
-  return total > 1 ? `Selection ${String(index + 1).padStart(2, "0")}` : "Selection";
+function selectionLabel(index: number, total: number, language: Language = "en") {
+  const label = UI_TEXT[language].selection;
+  return total > 1 ? `${label} ${String(index + 1).padStart(2, "0")}` : label;
 }
 
-function normalizeContextLabels(attachments: ComposerAttachment[]) {
+function normalizeContextLabels(attachments: ComposerAttachment[], language: Language = "en") {
   const selectionIds = attachments
     .filter((attachment) => attachment.kind === "selection")
     .map((attachment) => attachment.id);
 
   return attachments.map((attachment) => {
+    if (attachment.kind === "document") {
+      return { ...attachment, label: UI_TEXT[language].document };
+    }
+
     if (attachment.kind !== "selection") return attachment;
     const index = selectionIds.indexOf(attachment.id);
     return {
       ...attachment,
-      label: selectionLabel(index, selectionIds.length),
+      label: selectionLabel(index, selectionIds.length, language),
     };
   });
 }
 
-function contextSummaryFromAttachments(attachments: ComposerAttachment[]) {
+function contextSummaryFromAttachments(attachments: ComposerAttachment[], language: Language = "en") {
   const contextLabels = attachments
     .filter((attachment) => attachment.kind === "selection" || attachment.kind === "document")
     .map((attachment) => attachment.label);
 
-  return contextLabels.length ? contextLabels.join(", ") : "Chat only";
+  return contextLabels.length ? contextLabels.join(", ") : language === "zh-CN" ? "仅聊天" : "Chat only";
 }
 
 function formatClosedMinute(value: number) {
@@ -336,8 +556,9 @@ function formatClosedMinute(value: number) {
   });
 }
 
-function accountDisplayName(index: number) {
-  return `Account ${String(index + 1).padStart(2, "0")}`;
+function accountDisplayName(index: number, language: Language = "en") {
+  const label = language === "zh-CN" ? "账户" : "Account";
+  return `${label} ${String(index + 1).padStart(2, "0")}`;
 }
 
 function accountState(account: AccountSummary) {
@@ -367,8 +588,8 @@ function accountState(account: AccountSummary) {
 
 function testStatusTone(value: string) {
   const normalized = value.toLowerCase();
-  if (normalized === "online") return "online";
-  if (normalized === "testing") return "testing";
+  if (normalized === "online" || value === UI_TEXT["zh-CN"].online) return "online";
+  if (normalized === "testing" || value === UI_TEXT["zh-CN"].testing) return "testing";
   return "limited";
 }
 
@@ -386,6 +607,16 @@ function buildUserContent(prompt: string, attachments: MessageAttachment[]) {
   const contextBlocks = attachments.map((attachment) => {
     if (attachment.kind === "quote") {
       return [`Quoted assistant response: ${attachment.label}`, attachment.text].join("\n");
+    }
+
+    if (attachment.kind === "web") {
+      return [
+        "Context source: web",
+        `Label: ${attachment.label}`,
+        `URL: ${attachment.documentName}`,
+        "",
+        attachment.text,
+      ].join("\n");
     }
 
     return [
@@ -431,6 +662,36 @@ function messageAttachmentFromComposer(attachment: ComposerAttachment): MessageA
     documentName: attachment.documentName,
     selectionLength: attachment.selectionLength,
     truncated: attachment.truncated,
+  };
+}
+
+async function fetchWebAttachment(
+  url: string,
+  localBaseUrl: string,
+  localApiKey: string,
+): Promise<MessageAttachment> {
+  const endpoint = normalizeServiceEndpoint(localBaseUrl, `/web/fetch?url=${encodeURIComponent(url)}`);
+  const response = await fetch(endpoint, {
+    headers: { Authorization: `Bearer ${localApiKey}` },
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Could not read URL with HTTP ${response.status}.`);
+  }
+
+  const result = (await response.json()) as WebFetchResult;
+  if (!result.text.trim()) {
+    throw new Error(`Could not read text from URL: ${url}`);
+  }
+
+  return {
+    kind: "web",
+    label: result.title ? `Web: ${result.title}` : "Web",
+    text: result.text,
+    documentName: result.url,
+    selectionLength: result.chars,
+    truncated: result.truncated,
   };
 }
 
@@ -508,9 +769,9 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
-function titleFromPrompt(prompt: string) {
+function titleFromPrompt(prompt: string, language: Language = "en") {
   const clean = prompt.replace(/\s+/g, " ").trim();
-  return clean.length > 36 ? `${clean.slice(0, 34)}...` : clean || "Untitled chat";
+  return clean.length > 36 ? `${clean.slice(0, 34)}...` : clean || (language === "zh-CN" ? "未命名对话" : "Untitled chat");
 }
 
 async function getDocumentFingerprint(): Promise<string> {
@@ -611,11 +872,15 @@ async function loadSkillRegistry(): Promise<SkillDefinition[]> {
 export function App() {
   const composerRef = useRef<HTMLFormElement | null>(null);
   const [settings, setSettings] = useState<ProxySettings>(() => loadSettings());
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(DEFAULT_RUNTIME_CONFIG);
+  const t = useCallback((key: UiTextKey) => UI_TEXT[settings.language][key], [settings.language]);
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [error, setError] = useState<string>("");
   const [testStatus, setTestStatus] = useState<string>("");
   const [prompt, setPrompt] = useState("");
-  const [contextSummary, setContextSummary] = useState("Chat only");
+  const [contextSummary, setContextSummary] = useState(() =>
+    settings.language === "zh-CN" ? "仅聊天" : "Chat only",
+  );
   const [currentDocFingerprint, setCurrentDocFingerprint] = useState("");
   const [contextAttachments, setContextAttachments] = useState<ComposerAttachment[]>([]);
   const [quoteAttachment, setQuoteAttachment] = useState<ComposerAttachment | null>(null);
@@ -643,6 +908,11 @@ export function App() {
     [contextAttachments, quoteAttachment],
   );
   const canSubmit = Boolean(prompt.trim() || activeSkill || composerAttachments.length);
+  const canAutoRouteAccounts = accounts.length > 1;
+  const autoRouteAccountsActive = canAutoRouteAccounts && settings.autoRouteAccounts;
+  const localBaseUrl = settings.baseUrl || runtimeConfig.baseUrl || DEFAULT_SETTINGS.baseUrl;
+  const localApiKey = settings.apiKey || runtimeConfig.apiKey;
+  const localAdminKey = settings.adminKey || runtimeConfig.adminKey;
 
   function markConnectPanelSeen() {
     setConnectPanelSeen(true);
@@ -676,14 +946,14 @@ export function App() {
       return;
     }
 
-    const response = await fetch(`${settings.baseUrl}/api/admin/accounts`, {
-      headers: { Authorization: `Bearer ${settings.adminKey}` },
+    const response = await fetch(`${localBaseUrl}/api/admin/accounts`, {
+      headers: { Authorization: `Bearer ${localAdminKey}` },
     });
 
     if (response.ok) {
       setAccounts(await response.json());
     }
-  }, [settings.adminKey, settings.baseUrl, settings.provider]);
+  }, [localAdminKey, localBaseUrl, settings.provider]);
 
   const archiveConversation = useCallback(
     (nextMessages = messages) => {
@@ -692,7 +962,7 @@ export function App() {
       const firstUserMessage = nextMessages.find((message) => message.role === "user");
       const snapshot: ConversationSnapshot = {
         id: `${Date.now()}`,
-        title: titleFromPrompt(firstUserMessage?.content ?? "Untitled chat"),
+        title: titleFromPrompt(firstUserMessage?.content ?? "", settings.language),
         messages: nextMessages,
         contextSummary,
         documentFingerprint: currentDocFingerprint || undefined,
@@ -702,7 +972,7 @@ export function App() {
 
       saveHistory([snapshot, ...history.filter((item) => item.title !== snapshot.title)]);
     },
-    [contextSummary, currentDocFingerprint, history, messages, saveHistory],
+    [contextSummary, currentDocFingerprint, history, messages, saveHistory, settings.language],
   );
 
   const checkCompatibleApi = useCallback(async (): Promise<ConnectionState> => {
@@ -744,14 +1014,14 @@ export function App() {
         return await checkCompatibleApi();
       }
 
-      const health = await fetch(`${settings.baseUrl}/health`);
+      const health = await fetch(`${localBaseUrl}/health`);
       if (!health.ok) {
         setConnection("offline");
         return "offline";
       }
 
-      const stats = await fetch(`${settings.baseUrl}/auth/status`, {
-        headers: { Authorization: `Bearer ${settings.adminKey}` },
+      const stats = await fetch(`${localBaseUrl}/auth/status`, {
+        headers: { Authorization: `Bearer ${localAdminKey}` },
       });
 
       if (!stats.ok) {
@@ -769,7 +1039,34 @@ export function App() {
       if (!options?.quiet) setError(explainError(connectionError));
       return "offline";
     }
-  }, [checkCompatibleApi, fetchAccounts, settings.adminKey, settings.baseUrl, settings.provider]);
+  }, [checkCompatibleApi, fetchAccounts, localAdminKey, localBaseUrl, settings.provider]);
+
+  useEffect(() => {
+    async function fetchRuntimeConfig() {
+      for (const path of ["/config.json", "/aw-proxy/config.json"]) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) return response.json();
+        } catch {
+          // Try the next runtime config path.
+        }
+      }
+
+      return DEFAULT_RUNTIME_CONFIG;
+    }
+
+    void fetchRuntimeConfig()
+      .then((config) => {
+        setRuntimeConfig({
+          baseUrl: config.baseUrl || DEFAULT_RUNTIME_CONFIG.baseUrl,
+          apiKey: config.apiKey || "",
+          adminKey: config.adminKey || "",
+        });
+      })
+      .catch(() => {
+        setRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
+      });
+  }, []);
 
   useEffect(() => {
     void checkConnection();
@@ -822,14 +1119,18 @@ export function App() {
   }, [composerMenu]);
 
   useEffect(() => {
-    setContextSummary(contextSummaryFromAttachments(contextAttachments));
-  }, [contextAttachments]);
+    setContextAttachments((current) => normalizeContextLabels(current, settings.language));
+  }, [settings.language]);
+
+  useEffect(() => {
+    setContextSummary(contextSummaryFromAttachments(contextAttachments, settings.language));
+  }, [contextAttachments, settings.language]);
 
   function makeAttachment(context: DocumentContext, idSuffix = `${Date.now()}`): ComposerAttachment {
     return {
       id: `${context.mode}-${idSuffix}-${Math.random().toString(36).slice(2, 8)}`,
       kind: context.mode,
-      label: context.mode === "selection" ? "Selection" : "Document",
+      label: context.mode === "selection" ? t("selection") : t("document"),
       text: context.text,
       documentName: context.documentName,
       selectionLength: context.selectionLength,
@@ -840,7 +1141,7 @@ export function App() {
   function updateContextAttachments(
     updater: (current: ComposerAttachment[]) => ComposerAttachment[],
   ) {
-    setContextAttachments((current) => normalizeContextLabels(updater(current)));
+    setContextAttachments((current) => normalizeContextLabels(updater(current), settings.language));
   }
 
   function removeAttachment(id: string) {
@@ -858,7 +1159,15 @@ export function App() {
       const documentContext =
         mode === "selection" ? await readSelectionContext() : await readDocumentBodyContext();
       if (!documentContext.text) {
-        setError(mode === "selection" ? "No selected Word text found." : "No readable Word text found.");
+        setError(
+          mode === "selection"
+            ? settings.language === "zh-CN"
+              ? "没有找到已选中的 Word 文本。"
+              : "No selected Word text found."
+            : settings.language === "zh-CN"
+              ? "没有找到可读取的 Word 文本。"
+              : "No readable Word text found.",
+        );
         setComposerMenu(mode === "selection" ? "context" : null);
         return;
       }
@@ -870,7 +1179,11 @@ export function App() {
 
         const selectionCount = current.filter((attachment) => attachment.kind === "selection").length;
         if (selectionCount >= 5) {
-          setError("Selection supports up to 5 text blocks.");
+          setError(
+            settings.language === "zh-CN"
+              ? "Selection 最多支持 5 段文本。"
+              : "Selection supports up to 5 text blocks.",
+          );
           return current;
         }
 
@@ -909,33 +1222,42 @@ export function App() {
     attachmentOverride?: MessageAttachment[],
   ) {
     const trimmedPrompt = nextPrompt.trim();
-    const skillCommand = activeSkill ? `/${activeSkill.label}` : "";
+    const skillCommand = activeSkill ? `/${skillLabel(activeSkill.label, settings.language)}` : "";
     const effectivePrompt = trimmedPrompt || skillCommand;
     if ((!effectivePrompt && !composerAttachments.length) || isGenerating) return;
     const userPrompt = trimmedPrompt || activeSkill?.label || effectivePrompt;
-    const attachmentsForSend = attachmentOverride ?? composerAttachments.map(messageAttachmentFromComposer);
-    const messageAttachments = attachmentsForSend.map((attachment) => ({
-      ...attachment,
-      label:
-        attachment.kind === "document"
-          ? "@ doc"
-          : attachment.kind === "selection"
-            ? `@ ${attachment.label.toLowerCase()}`
-            : "@ quote",
-    }));
 
     setIsGenerating(true);
     setError("");
     setComposerMenu(null);
 
     try {
+      const baseAttachmentsForSend = attachmentOverride ?? composerAttachments.map(messageAttachmentFromComposer);
+      const webAttachments =
+        attachmentOverride === undefined
+          ? await Promise.all(
+              extractWebUrls(userPrompt).map((url) => fetchWebAttachment(url, localBaseUrl, localApiKey)),
+            )
+          : [];
+      const attachmentsForSend = [...baseAttachmentsForSend, ...webAttachments];
+      const messageAttachments = attachmentsForSend.map((attachment) => ({
+        ...attachment,
+        label:
+          attachment.kind === "document"
+            ? "@ doc"
+            : attachment.kind === "selection"
+              ? `@ ${attachment.label.toLowerCase()}`
+              : attachment.kind === "web"
+                ? "@ web"
+                : "@ quote",
+      }));
       const userContent = buildUserContent(userPrompt, attachmentsForSend);
       const systemPrompt = buildSystemPrompt(awInstructions, attachmentsForSend, activeSkill);
       const outgoingMessages: ChatMessage[] = [
         ...baseMessages,
         {
           role: "user",
-          content: effectivePrompt || "Attached context",
+          content: effectivePrompt || t("attachedContext"),
           attachments: messageAttachments,
         },
       ];
@@ -948,9 +1270,9 @@ export function App() {
       const endpoint =
         settings.provider === "compatible"
           ? normalizeMessagesEndpoint(settings.compatibleBaseUrl)
-          : `${settings.baseUrl}/v1/messages`;
+          : `${localBaseUrl}/v1/messages`;
       const authKey =
-        settings.provider === "compatible" ? settings.compatibleApiKey.trim() : settings.apiKey;
+        settings.provider === "compatible" ? settings.compatibleApiKey.trim() : localApiKey;
 
       if (!endpoint || !authKey) {
         throw new Error("Configure a provider endpoint and key before sending.");
@@ -989,6 +1311,7 @@ export function App() {
                 selectionCount: attachmentsForSend.filter((attachment) => attachment.kind === "selection").length,
                 hasDocument: attachmentsForSend.some((attachment) => attachment.kind === "document"),
                 hasQuote: attachmentsForSend.some((attachment) => attachment.kind === "quote"),
+                hasWeb: attachmentsForSend.some((attachment) => attachment.kind === "web"),
                 thinkingEffort: profile.effort,
                 model: profile.model,
                 autoFallback: settings.model === "auto",
@@ -1029,11 +1352,11 @@ export function App() {
       ];
       const snapshot: ConversationSnapshot = {
         id: `${Date.now()}`,
-        title: titleFromPrompt(outgoingMessages[0]?.content ?? effectivePrompt),
+        title: titleFromPrompt(outgoingMessages[0]?.content ?? effectivePrompt, settings.language),
         messages: completedMessages,
         contextSummary: attachmentsForSend.length
           ? attachmentsForSend.map((attachment) => attachment.label).join(", ")
-          : "Chat only",
+          : contextSummaryFromAttachments([], settings.language),
         documentFingerprint: currentDocFingerprint || undefined,
         createdAt: Date.now(),
         closedAt: Date.now(),
@@ -1057,7 +1380,7 @@ export function App() {
     setQuoteAttachment({
       id: `quote-${Date.now()}-${index}`,
       kind: "quote",
-      label: "Quote",
+      label: t("quote"),
       text: content,
       documentName: "Conversation",
       selectionLength: content.length,
@@ -1078,9 +1401,9 @@ export function App() {
     const userMessage = messages[lastUserIndex];
     const baseMessages = messages.slice(0, lastUserIndex);
     setMessages(baseMessages);
-    setPrompt(userMessage.content === "Attached context" ? "" : userMessage.content);
+    setPrompt(isAttachedContextPlaceholder(userMessage.content) ? "" : userMessage.content);
     void sendPrompt(
-      userMessage.content === "Attached context" ? "" : userMessage.content,
+      isAttachedContextPlaceholder(userMessage.content) ? "" : userMessage.content,
       baseMessages,
       userMessage.attachments ?? [],
     );
@@ -1089,13 +1412,13 @@ export function App() {
   async function restartAndCheck() {
     setIsTesting(true);
     setError("");
-    setTestStatus("Testing");
+    setTestStatus(t("testing"));
 
     try {
       if (settings.provider === "claude2api") {
-        const response = await fetch(`${settings.baseUrl}/service/restart`, {
+        const response = await fetch(`${localBaseUrl}/service/restart`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${settings.adminKey}` },
+          headers: { Authorization: `Bearer ${localAdminKey}` },
         });
         if (!response.ok) {
           throw new Error(`Service test failed with HTTP ${response.status}.`);
@@ -1103,7 +1426,7 @@ export function App() {
       }
 
       const nextConnection = await checkConnection({ quiet: true });
-      setTestStatus(nextConnection === "connected" ? "Online" : "Offline");
+      setTestStatus(nextConnection === "connected" ? t("online") : t("offline"));
     } catch (serviceError) {
       setConnection("offline");
       setTestStatus(explainError(serviceError).slice(0, 42));
@@ -1118,14 +1441,14 @@ export function App() {
 
     setIsSavingAccount(true);
     setError("");
-    setTestStatus("Testing");
+    setTestStatus(t("testing"));
 
     try {
-      const response = await fetch(`${settings.baseUrl}/api/admin/accounts`, {
+      const response = await fetch(`${localBaseUrl}/api/admin/accounts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${settings.adminKey}`,
+          Authorization: `Bearer ${localAdminKey}`,
         },
         body: JSON.stringify({ cookie_value: cookie }),
       });
@@ -1137,10 +1460,10 @@ export function App() {
       setNewAccountCookie("");
       await fetchAccounts();
       const nextConnection = await checkConnection({ quiet: true });
-      setTestStatus(nextConnection === "connected" ? "Online" : "Limited");
+      setTestStatus(nextConnection === "connected" ? t("online") : t("limited"));
     } catch (accountError) {
       setError(explainError(accountError));
-      setTestStatus("Limited");
+      setTestStatus(t("limited"));
     } finally {
       setIsSavingAccount(false);
     }
@@ -1150,9 +1473,9 @@ export function App() {
     setError("");
 
     try {
-      const response = await fetch(`${settings.baseUrl}/api/admin/accounts/${id}`, {
+      const response = await fetch(`${localBaseUrl}/api/admin/accounts/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${settings.adminKey}` },
+        headers: { Authorization: `Bearer ${localAdminKey}` },
       });
 
       if (!response.ok) {
@@ -1173,7 +1496,7 @@ export function App() {
     setError("");
     setContextAttachments([]);
     setQuoteAttachment(null);
-    setContextSummary("Chat only");
+    setContextSummary(contextSummaryFromAttachments([], settings.language));
     setActiveSkill(null);
     setComposerMenu(null);
     setModelListOpen(false);
@@ -1222,8 +1545,8 @@ export function App() {
           <button
             className="iconButton"
             type="button"
-            aria-label="New conversation"
-            title="New conversation"
+            aria-label={t("newConversation")}
+            title={t("newConversation")}
             onClick={startNewConversation}
           >
             <MessageCirclePlus size={20} />
@@ -1231,8 +1554,8 @@ export function App() {
           <button
             className="iconButton"
             type="button"
-            aria-label="Open history"
-            title="History"
+            aria-label={t("openHistory")}
+            title={t("history")}
             onClick={() => setHistoryOpen(true)}
           >
             <History size={20} />
@@ -1240,8 +1563,8 @@ export function App() {
           <button
             className="iconButton"
             type="button"
-            aria-label="Open settings"
-            title="Settings"
+            aria-label={t("openSettings")}
+            title={t("settings")}
             onClick={() => {
               markConnectPanelSeen();
               setSettingsOpen(true);
@@ -1253,8 +1576,8 @@ export function App() {
         <button
           className="brandButton"
           type="button"
-          aria-label="Check service"
-          title="Check service"
+          aria-label={t("checkService")}
+          title={t("checkService")}
           onClick={() => {
             markConnectPanelSeen();
             void checkConnection({ quiet: true });
@@ -1265,10 +1588,10 @@ export function App() {
           <span className={`statusDot ${connection}`} />
           <span className="statusText">
             {connection === "connected"
-              ? "Connected"
+              ? t("connected")
               : connection === "checking"
-                ? "Checking"
-                : "Not linked"}
+                ? t("checking")
+                : t("notLinked")}
           </span>
         </button>
       </header>
@@ -1279,8 +1602,8 @@ export function App() {
       !connectPanelSeen ? (
         <section className="connectPanel">
           <div>
-            <h2>Connect account</h2>
-            <p>Add a Claude Free account cookie in Settings, then test the local link.</p>
+            <h2>{t("connectAccount")}</h2>
+            <p>{t("connectAccountNote")}</p>
           </div>
           <div className="connectActions">
             <button
@@ -1292,7 +1615,7 @@ export function App() {
               }}
             >
               <Settings size={16} />
-              Settings
+              {t("settings")}
             </button>
             <button
               type="button"
@@ -1303,13 +1626,13 @@ export function App() {
               }}
             >
               <RefreshCw size={16} />
-              Check
+              {t("check")}
             </button>
           </div>
         </section>
       ) : null}
 
-      <section className="workspace" aria-label="Conversation">
+      <section className="workspace" aria-label={t("conversation")}>
         {messages.length ? (
           <div className="messages">
             {messages.map((message, index) => (
@@ -1318,35 +1641,35 @@ export function App() {
                   {message.role === "user" ? settings.userName : settings.assistantName}
                 </div>
                 {message.attachments?.length ? (
-                  <div className="messageTags" aria-label="Attached context">
-                    {message.attachments.map((attachment) => (
-                      <span key={`${attachment.kind}-${attachment.label}`}>{attachment.label}</span>
+                  <div className="messageTags" aria-label={t("attachedContext")}>
+                    {message.attachments.map((attachment, attachmentIndex) => (
+                      <span key={`${attachment.kind}-${attachment.label}-${attachmentIndex}`}>{attachment.label}</span>
                     ))}
                   </div>
                 ) : null}
                 <MarkdownMessage content={message.content} />
                 {message.role === "assistant" ? (
-                  <div className="assistantActions" aria-label="Assistant actions">
+                  <div className="assistantActions" aria-label={t("assistantActions")}>
                     <button
                       type="button"
-                      aria-label="Retry"
-                      title="Retry"
+                      aria-label={t("retry")}
+                      title={t("retry")}
                       onClick={() => retryFromMessage(index)}
                     >
                       <RefreshCw size={14} />
                     </button>
                     <button
                       type="button"
-                      aria-label="Copy"
-                      title="Copy"
+                      aria-label={t("copy")}
+                      title={t("copy")}
                       onClick={() => void copyMessage(message.content)}
                     >
                       <Clipboard size={14} />
                     </button>
                     <button
                       type="button"
-                      aria-label="Quote"
-                      title="Quote"
+                      aria-label={t("quote")}
+                      title={t("quote")}
                       onClick={() => quoteMessage(message.content, index)}
                     >
                       <Quote size={14} />
@@ -1361,7 +1684,7 @@ export function App() {
                 <div className="thinkingLine">
                   <span className="thinkingSpinner" />
                   <span>
-                    Thinking<span className="thinkingDots" />
+                    {t("thinking")}<span className="thinkingDots" />
                   </span>
                 </div>
               </article>
@@ -1370,7 +1693,7 @@ export function App() {
         ) : (
           <div className="emptyState">
             <img className="emptyMark" src="/assets/aw-logo-mark.svg" alt="" aria-hidden="true" />
-            <div className="emptyTitle">How can I help you with this document?</div>
+            <div className="emptyTitle">{t("emptyTitle")}</div>
             <div className="emptyCodeBlock" aria-hidden="true">
               <span className="emptyCodePrompt">&gt;</span>
               <span className="emptyCodeCycle" />
@@ -1412,12 +1735,12 @@ export function App() {
                       <span className="skillSlash" aria-hidden="true">
                         /
                       </span>
-                      <span className="skillName">{skill.label}</span>
+                      <span className="skillName">{skillLabel(skill.label, settings.language)}</span>
                       {activeSkill?.id === skill.id ? <Check className="trailingIcon" size={14} /> : null}
                     </button>
                   ))
                 ) : (
-                  <div className="menuEmpty">No skills found</div>
+                  <div className="menuEmpty">{t("noSkillsFound")}</div>
                 )}
               </>
             ) : composerMenu === "context" ? (
@@ -1432,7 +1755,7 @@ export function App() {
                   onClick={() => void attachContext("selection")}
                 >
                   <AtSign size={16} />
-                  <span>Selection</span>
+                  <span>{t("selection")}</span>
                   {contextAttachments.some((attachment) => attachment.kind === "selection") ? (
                     <Check className="trailingIcon" size={14} />
                   ) : null}
@@ -1447,7 +1770,7 @@ export function App() {
                   onClick={() => void attachContext("document")}
                 >
                   <FileText size={16} />
-                  <span>Document</span>
+                  <span>{t("document")}</span>
                   {contextAttachments.some((attachment) => attachment.kind === "document") ? (
                     <Check className="trailingIcon" size={14} />
                   ) : null}
@@ -1455,8 +1778,8 @@ export function App() {
               </>
             ) : (
               <>
-                <div className="menuSectionLabel">Thinking Effort</div>
-                <div className="optionList" role="group" aria-label="Thinking Effort">
+                <div className="menuSectionLabel">{t("thinkingEffort")}</div>
+                <div className="optionList" role="group" aria-label={t("thinkingEffort")}>
                   {(["auto", "low", "medium", "high"] as const).map((effort) => (
                     <button
                       key={effort}
@@ -1475,12 +1798,12 @@ export function App() {
                   aria-expanded={modelListOpen}
                   onClick={() => setModelListOpen((current) => !current)}
                 >
-                  <span>Model Setting</span>
+                  <span>{t("modelSetting")}</span>
                   <strong>{modelLabel(settings.model)}</strong>
                   <ChevronDown size={15} />
                 </button>
                 {modelListOpen ? (
-                  <div className="optionList" role="group" aria-label="Model">
+                  <div className="optionList" role="group" aria-label={t("model")}>
                     {(["auto", "sonnet", "haiku"] as const).map((model) => (
                       <button
                         key={model}
@@ -1503,7 +1826,7 @@ export function App() {
         ) : null}
 
         <label className="srOnly" htmlFor="prompt">
-          Message
+          {t("message")}
         </label>
         {activeSkill || composerAttachments.length ? (
           <div className="composerTokens">
@@ -1511,10 +1834,10 @@ export function App() {
               <button
                 className="skillPill"
                 type="button"
-                title="Remove skill"
+                title={t("removeSkill")}
                 onClick={() => setActiveSkill(null)}
               >
-                <span>/{activeSkill.label}</span>
+                <span>/{skillLabel(activeSkill.label, settings.language)}</span>
                 <X size={12} />
               </button>
             ) : null}
@@ -1523,7 +1846,7 @@ export function App() {
                 key={attachment.id}
                 className={`contextPill ${attachment.kind}`}
                 type="button"
-                title={`Remove ${attachment.label}`}
+                title={`${settings.language === "zh-CN" ? "移除" : "Remove"} ${attachment.label}`}
                 onClick={() => removeAttachment(attachment.id)}
               >
                 <span>{attachment.label}</span>
@@ -1548,14 +1871,14 @@ export function App() {
               void sendPrompt();
             }
           }}
-          placeholder="Ask anything about this document…"
+          placeholder={t("placeholder")}
         />
         <div className="composerFooter">
           <button
             className={`toolButton ${activeSkill || composerMenu === "commands" ? "active" : ""}`}
             type="button"
-            aria-label="Open task commands"
-            title="Tasks"
+            aria-label={t("openTaskCommands")}
+            title={t("tasks")}
             onClick={() => setComposerMenu(composerMenu === "commands" ? null : "commands")}
           >
             <span className="slashGlyph" aria-hidden="true">
@@ -1567,9 +1890,9 @@ export function App() {
               contextAttachments.length || quoteAttachment || composerMenu === "context" ? "active" : ""
             }`}
             type="button"
-            aria-label="Attach Word context"
+            aria-label={t("attachWordContext")}
             aria-pressed={Boolean(contextAttachments.length || quoteAttachment)}
-            title="Attach Word context"
+            title={t("attachWordContext")}
             onClick={() => void handleContextButton()}
           >
             <AtSign size={19} />
@@ -1577,7 +1900,7 @@ export function App() {
           <button
             type="button"
             className="modelButton"
-            aria-label="Open model options"
+            aria-label={t("openModelOptions")}
             aria-expanded={composerMenu === "model"}
             onClick={() => {
               const nextMenu = composerMenu === "model" ? null : "model";
@@ -1591,7 +1914,7 @@ export function App() {
           <button
             type="submit"
             className="sendButton"
-            aria-label="Send"
+            aria-label={t("send")}
             disabled={isGenerating || !canSubmit}
           >
             <ArrowUp size={20} />
@@ -1600,18 +1923,18 @@ export function App() {
       </form>
 
       {historyOpen ? (
-        <div className="overlay" role="dialog" aria-modal="true" aria-label="History">
+        <div className="overlay" role="dialog" aria-modal="true" aria-label={t("history")}>
           <aside className="drawer">
             <div className="drawerHeader">
               <button
                 className="iconButton"
                 type="button"
-                aria-label="Close history"
+                aria-label={t("closeHistory")}
                 onClick={() => setHistoryOpen(false)}
               >
                 <X size={18} />
               </button>
-              <h2>History</h2>
+              <h2>{t("history")}</h2>
               <span className="drawerHeaderSpacer" aria-hidden="true" />
             </div>
             {history.length ? (
@@ -1639,7 +1962,7 @@ export function App() {
                         <button
                           type="button"
                           className="historyDelete"
-                          aria-label="Delete history item"
+                          aria-label={t("deleteHistoryItem")}
                           onClick={() => deleteHistoryItem(item.id)}
                         >
                           <Trash2 size={14} />
@@ -1654,7 +1977,7 @@ export function App() {
                       {otherDocItems.length ? (
                         <>
                           <div style={{ fontSize: 10, fontWeight: 760, color: "var(--aw-muted)", padding: "6px 4px 2px" }}>
-                            Other documents
+                            {t("otherDocuments")}
                           </div>
                           {otherDocItems.map(renderHistoryItem)}
                         </>
@@ -1664,43 +1987,59 @@ export function App() {
                 })()}
                 <button type="button" className="clearHistoryButton" onClick={() => saveHistory([])}>
                   <Trash2 size={15} />
-                  Clear All History
+                  {t("clearAllHistory")}
                 </button>
               </div>
             ) : (
-              <p className="drawerNote">No archived session yet.</p>
+              <p className="drawerNote">{t("noArchivedSession")}</p>
             )}
           </aside>
         </div>
       ) : null}
 
       {settingsOpen ? (
-        <div className="overlay" role="dialog" aria-modal="true" aria-label="Settings">
+        <div className="overlay" role="dialog" aria-modal="true" aria-label={t("settings")}>
           <aside className="drawer settingsDrawer">
             <div className="drawerHeader">
               <button
                 className="iconButton"
                 type="button"
-                aria-label="Close settings"
+                aria-label={t("closeSettings")}
                 onClick={() => setSettingsOpen(false)}
               >
                 <X size={18} />
               </button>
-              <h2>Settings</h2>
+              <h2>{t("settings")}</h2>
               <span className="drawerHeaderSpacer" aria-hidden="true" />
             </div>
 
             <section className="drawerSection">
-              <div className="sectionTitle">Prefer Names</div>
+              <div className="sectionTitle">{t("language")}</div>
               <label>
-                User Role
+                <span className="srOnly">{t("language")}</span>
+                <select
+                  value={settings.language}
+                  onChange={(event) =>
+                    saveSettings({ ...settings, language: event.target.value as Language })
+                  }
+                >
+                  <option value="zh-CN">{t("zhChinese")}</option>
+                  <option value="en">{t("english")}</option>
+                </select>
+              </label>
+            </section>
+
+            <section className="drawerSection">
+              <div className="sectionTitle">{t("preferNames")}</div>
+              <label>
+                {t("userRole")}
                 <input
                   value={settings.userName}
                   onChange={(event) => saveSettings({ ...settings, userName: event.target.value })}
                 />
               </label>
               <label>
-                Assistant Role
+                {t("assistantRole")}
                 <input
                   value={settings.assistantName}
                   onChange={(event) =>
@@ -1711,8 +2050,8 @@ export function App() {
             </section>
 
             <section className="drawerSection">
-              <div className="sectionTitle">API Route</div>
-              <div className="routeSwitch" role="group" aria-label="API Route">
+              <div className="sectionTitle">{t("apiRoute")}</div>
+              <div className="routeSwitch" role="group" aria-label={t("apiRoute")}>
                 <button
                   type="button"
                   className={settings.provider === "claude2api" ? "selected" : ""}
@@ -1738,19 +2077,19 @@ export function App() {
 
             {settings.provider === "claude2api" ? (
               <section className="drawerSection">
-                <div className="sectionTitle">API Service</div>
+                <div className="sectionTitle">{t("apiService")}</div>
                 <label>
                   URL
                   <span className="inputShell">
                     <input
                       value={
-                        settings.baseUrl === DEFAULT_SETTINGS.baseUrl ? "Default" : settings.baseUrl
+                        settings.baseUrl === DEFAULT_SETTINGS.baseUrl ? t("default") : settings.baseUrl
                       }
                       onChange={(event) =>
                         saveSettings({
                           ...settings,
                           baseUrl:
-                            event.target.value.trim().toLowerCase() === "default"
+                            isDefaultInput(event.target.value)
                               ? DEFAULT_SETTINGS.baseUrl
                               : event.target.value,
                         })
@@ -1759,17 +2098,17 @@ export function App() {
                   </span>
                 </label>
                 <label>
-                  API Key
+                  {t("apiKey")}
                   <span className="inputShell">
                     <input
                       value={
-                        settings.apiKey === DEFAULT_SETTINGS.apiKey ? "Default" : settings.apiKey
+                        settings.apiKey === DEFAULT_SETTINGS.apiKey ? t("default") : settings.apiKey
                       }
                       onChange={(event) =>
                         saveSettings({
                           ...settings,
                           apiKey:
-                            event.target.value.trim().toLowerCase() === "default"
+                            isDefaultInput(event.target.value)
                               ? DEFAULT_SETTINGS.apiKey
                               : event.target.value,
                         })
@@ -1778,7 +2117,7 @@ export function App() {
                   </span>
                 </label>
                 <details className="advancedSettings">
-                  <summary>Advanced</summary>
+                  <summary>{t("advanced")}</summary>
                   <label>
                     Admin Key
                     <input
@@ -1792,8 +2131,8 @@ export function App() {
                 <div className="serviceActions">
                   <button
                     type="button"
-                    className={`routeActionButton ${settings.autoRouteAccounts ? "active" : ""}`}
-                    aria-pressed={settings.autoRouteAccounts}
+                    className={`routeActionButton ${autoRouteAccountsActive ? "active" : ""}`}
+                    aria-pressed={autoRouteAccountsActive}
                     onClick={() => {
                       markConnectPanelSeen();
                       saveSettings({
@@ -1801,9 +2140,10 @@ export function App() {
                         autoRouteAccounts: !settings.autoRouteAccounts,
                       });
                     }}
+                    disabled={!canAutoRouteAccounts}
                   >
                     <Route size={15} />
-                    Auto Route
+                    {t("autoRoute")}
                   </button>
                   <button
                     type="button"
@@ -1815,7 +2155,7 @@ export function App() {
                     disabled={isTesting}
                   >
                     <PlugZap size={15} />
-                    Test
+                    {t("test")}
                   </button>
                   {testStatus ? (
                     <span className={`testStatus ${testStatusTone(testStatus)}`}>{testStatus}</span>
@@ -1824,7 +2164,7 @@ export function App() {
               </section>
             ) : (
               <section className="drawerSection">
-                <div className="sectionTitle">Custom API</div>
+                <div className="sectionTitle">{t("customApi")}</div>
                 <label>
                   URL
                   <input
@@ -1836,7 +2176,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  API Key
+                  {t("apiKey")}
                   <input
                     value={settings.compatibleApiKey}
                     onChange={(event) =>
@@ -1845,7 +2185,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  Model Mapping (Sonnet)
+                  {t("modelMappingSonnet")}
                   <input
                     value={settings.compatibleSonnetModel}
                     onChange={(event) =>
@@ -1854,7 +2194,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  Model Mapping (Haiku)
+                  {t("modelMappingHaiku")}
                   <input
                     value={settings.compatibleHaikuModel}
                     onChange={(event) =>
@@ -1873,7 +2213,7 @@ export function App() {
                     disabled={isTesting}
                   >
                     <PlugZap size={15} />
-                    Test
+                    {t("test")}
                   </button>
                   {testStatus ? (
                     <span className={`testStatus ${testStatusTone(testStatus)}`}>{testStatus}</span>
@@ -1884,7 +2224,7 @@ export function App() {
 
             {settings.provider === "claude2api" ? (
               <section className="drawerSection">
-                <div className="sectionTitle">Accounts Management</div>
+                <div className="sectionTitle">{t("accountsManagement")}</div>
                 <div className="accountList">
                   {accounts.length ? (
                     accounts.map((account, index) => {
@@ -1892,25 +2232,25 @@ export function App() {
                       return (
                         <div className="accountRow" key={account.organization_uuid}>
                           <div>
-                            <strong>{accountDisplayName(index)}</strong>
+                            <strong>{accountDisplayName(index, settings.language)}</strong>
                             <span title={account.organization_uuid}>
                               {account.organization_uuid.slice(0, 8)}
                             </span>
                           </div>
                           <span className={`accountStatus ${state}`}>
                             {state === "online" ? (
-                              "Online"
+                              t("online")
                             ) : (
                               <>
                                 <CircleAlert size={12} />
-                                Limited
+                                {t("limited")}
                               </>
                             )}
                           </span>
                           <button
                             type="button"
                             className="iconButton"
-                            aria-label="Remove account"
+                            aria-label={t("removeAccount")}
                             onClick={() => void deleteAccount(account.organization_uuid)}
                           >
                             <Trash2 size={14} />
@@ -1919,14 +2259,14 @@ export function App() {
                       );
                     })
                   ) : (
-                    <p className="drawerNote">No account linked.</p>
+                    <p className="drawerNote">{t("noAccountLinked")}</p>
                   )}
                 </div>
                 <label>
-                  New Cookie
+                  {t("newAccountCookie")}
                   <textarea
                     className="cookieInput"
-                    placeholder="Log in to claude.ai in your browser, copy the cookie, then paste it here."
+                    placeholder={t("cookiePlaceholder")}
                     value={newAccountCookie}
                     onChange={(event) => setNewAccountCookie(event.target.value)}
                   />
@@ -1938,28 +2278,28 @@ export function App() {
                   disabled={!newAccountCookie.trim() || isSavingAccount}
                 >
                   <UserPlus size={15} />
-                  {isSavingAccount ? "Testing" : "Add Account"}
+                  {isSavingAccount ? t("testing") : t("addAccount")}
                 </button>
               </section>
             ) : null}
 
             <section className="drawerSection">
-              <div className="sectionTitle">Model Setting</div>
+              <div className="sectionTitle">{t("modelSetting")}</div>
               <label>
-                Model
+                {t("model")}
                 <select
                   value={settings.model}
                   onChange={(event) =>
                     saveSettings({ ...settings, model: event.target.value as ModelChoice })
                   }
                 >
-                  <option value="auto">Auto</option>
+                  <option value="auto">{modelLabel("auto")}</option>
                   <option value="sonnet">Sonnet</option>
                   <option value="haiku">Haiku</option>
                 </select>
               </label>
               <label>
-                Thinking Effort
+                {t("thinkingEffort")}
                 <select
                   value={settings.thinkingEffort}
                   onChange={(event) =>
@@ -1969,19 +2309,19 @@ export function App() {
                     })
                   }
                 >
-                  <option value="auto">Auto</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
+                  <option value="auto">{effortLabel("auto")}</option>
+                  <option value="low">{effortLabel("low")}</option>
+                  <option value="medium">{effortLabel("medium")}</option>
+                  <option value="high">{effortLabel("high")}</option>
                 </select>
               </label>
             </section>
 
             <section className="drawerSection">
-              <div className="sectionTitle">A\W Profile</div>
+              <div className="sectionTitle">{t("awProfile")}</div>
               <textarea
                 className="profileInput"
-                aria-label="A\\W Profile"
+                aria-label={t("awProfile")}
                 value={awProfile}
                 onChange={(event) => saveAwProfile(event.target.value)}
               />

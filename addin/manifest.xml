@@ -11,18 +11,18 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="A\W"/>
   <Description DefaultValue="A private Word writing workspace backed by a local Claude-compatible proxy."/>
-  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="https://localhost:3000"/>
+  <IconUrl DefaultValue="https://localhost:5201/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:5201/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://localhost:5201"/>
   <AppDomains>
-    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://localhost:5201</AppDomain>
     <AppDomain>http://127.0.0.1:5201</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3000/index.html"/>
+    <SourceLocation DefaultValue="https://localhost:5201/index.html"/>
   </DefaultSettings>
   <Permissions>ReadDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -68,13 +68,13 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:5201/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:5201/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:5201/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/index.html"/>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://localhost:3000"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:5201/index.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://localhost:5201"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="A\W is ready"/>

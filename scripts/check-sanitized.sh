@@ -4,11 +4,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+LEGACY_KEY_PREFIX="aw-local"
+LEGACY_HOST="localhost"
+LEGACY_PORT="3000"
+LOCAL_HOME="${HOME:-}"
+
 PATTERNS=(
-  "aw-local-dev-key"
-  "aw-local-admin-key"
-  "/Users/kimfischer99"
+  "${LEGACY_KEY_PREFIX}-dev-key"
+  "${LEGACY_KEY_PREFIX}-admin-key"
+  "${LEGACY_HOST}:${LEGACY_PORT}"
 )
+
+if [ -n "$LOCAL_HOME" ]; then
+  PATTERNS+=("$LOCAL_HOME")
+fi
 
 FAILED=0
 
@@ -36,6 +45,28 @@ for pattern in "${PATTERNS[@]}"; do
     echo "PASS: No '$pattern' found"
   fi
 done
+
+LEGACY_RUNTIME_PATTERN="clo""ve"
+HITS=$(grep -ri "$LEGACY_RUNTIME_PATTERN" "$ROOT_DIR" \
+  --exclude-dir='.git' \
+  --exclude-dir='node_modules' \
+  --exclude-dir='.venv' \
+  --exclude-dir='dist' \
+  --exclude-dir='build' \
+  --exclude-dir='.aw-runtime' \
+  --exclude='requirements.txt' \
+  --exclude='check-sanitized.sh' \
+  --exclude='*.log' \
+  --exclude='*.jsonl' \
+  -l 2>/dev/null || true)
+
+if [ -n "$HITS" ]; then
+  echo "FAIL: Found product-facing legacy runtime references in:"
+  echo "$HITS"
+  FAILED=1
+else
+  echo "PASS: No product-facing legacy runtime references found"
+fi
 
 if [ "$FAILED" -eq 1 ]; then
   echo ""

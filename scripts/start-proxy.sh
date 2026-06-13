@@ -10,9 +10,8 @@ if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$ENV_FILE" ]; then
   "$ROOT_DIR/scripts/setup-proxy.sh"
 fi
 
-echo "Starting local Claude proxy at http://127.0.0.1:5201"
-echo "Admin key: aw-local-admin-key"
-echo "API key: aw-local-dev-key"
+echo "Starting A\\W local proxy at http://127.0.0.1:5201"
+echo "Runtime keys: $PROXY_DIR/runtime.json"
 echo "Open the A\\W sidebar settings to configure accounts."
 
 cd "$PROXY_DIR"

@@ -9,8 +9,8 @@ WATCHER_PID_FILE="$PID_DIR/watcher.pid"
 AGENT_LABEL="com.aw.word-watcher"
 AGENT_PLIST="$HOME/Library/LaunchAgents/${AGENT_LABEL}.plist"
 
-ADDIN_PORT=3000
-PROXY_PORT=5201
+SERVER_PORT=5201
+LEGACY_ADDIN_PORT=3000
 WORD_GRACE_SECONDS="${AW_WORD_GRACE_SECONDS:-10}"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
@@ -30,8 +30,8 @@ Commands:
   agent-uninstall
                 Unload and remove the macOS LaunchAgent watcher
   agent-status  Show macOS LaunchAgent watcher status
-  force-start   Force both ports online without waiting for Word
-  force-restart Stop then force both ports online
+  force-start   Force the local server online without waiting for Word
+  force-restart Stop then force the local server online
 
 Environment:
   AW_WORD_GRACE_SECONDS=10  Seconds to wait after Word disappears before stopping
@@ -206,28 +206,23 @@ stop_service() {
 }
 
 start_all() {
-  if ! start_service "proxy" "$PROXY_PORT" "$ROOT_DIR/scripts/start-proxy.sh"; then
+  if ! start_service "server" "$SERVER_PORT" "$ROOT_DIR/scripts/start-server.sh"; then
     return 1
   fi
 
-  if ! start_service "addin" "$ADDIN_PORT" "$ROOT_DIR/scripts/start-addin.sh"; then
-    stop_service "proxy" "$PROXY_PORT" 1
-    return 1
-  fi
-
-  echo "A\\W dev ports are ready:"
-  echo "  add-in: https://localhost:${ADDIN_PORT}/"
-  echo "  proxy:  http://127.0.0.1:${PROXY_PORT}"
+  echo "A\\W local server is ready:"
+  echo "  app + proxy: https://localhost:${SERVER_PORT}/"
+  echo "  proxy API:   https://localhost:${SERVER_PORT}/aw-proxy"
 }
 
 stop_all() {
   local force="${1:-0}"
-  stop_service "addin" "$ADDIN_PORT" "$force"
-  stop_service "proxy" "$PROXY_PORT" "$force"
+  stop_service "server" "$SERVER_PORT" "$force"
+  stop_service "addin" "$LEGACY_ADDIN_PORT" "$force"
 }
 
 services_are_listening() {
-  [ -n "$(port_pid "$ADDIN_PORT")" ] || [ -n "$(port_pid "$PROXY_PORT")" ]
+  [ -n "$(port_pid "$SERVER_PORT")" ] || [ -n "$(port_pid "$LEGACY_ADDIN_PORT")" ]
 }
 
 status_service() {
@@ -287,8 +282,8 @@ status_all() {
     echo "word detected by current shell: not running"
   fi
 
-  status_service "addin" "$ADDIN_PORT"
-  status_service "proxy" "$PROXY_PORT"
+  status_service "server" "$SERVER_PORT"
+  status_service "legacy addin" "$LEGACY_ADDIN_PORT"
 }
 
 agent_domain() {

@@ -10,7 +10,7 @@ A\W 是一个面向个人实验使用的 Microsoft Word for Mac 侧边栏插件 
 4. 模型回复显示在侧边栏中。
 5. 用户确认后可把回复插入 Word 或替换当前选区。
 
-当前实现已经从单纯方案文档进入可运行原型阶段，但安装、运行依赖打包和 Windows 适配仍未完成。
+当前实现已经从单纯方案文档进入可运行原型阶段，正在推进 Mac `.pkg` 一键安装、首次启动和卸载验收；Windows 适配仍未完成。
 
 ## 2. 当前架构
 
@@ -32,7 +32,7 @@ Claude Free account session / compatible model provider
 项目由三层组成：
 
 - `addin/`：React + TypeScript + Office.js 侧边栏前端。
-- `local-proxy/`：基于 `clove-proxy[rnet]` 的本地 Claude2API-compatible FastAPI 包装（以下简称 aw-proxy）。
+- `local-proxy/`：本地 A\W Claude2API-compatible FastAPI 包装（以下简称 aw-proxy）。
 - `scripts/`：Mac 本地开发/侧载脚本。
 
 ## 3. 已完成情况
@@ -41,8 +41,8 @@ Claude Free account session / compatible model provider
 
 - 已提供 `addin/manifest.xml`，可在 Word for Mac 通过本地 manifest 侧载。
 - manifest 使用 `ReadDocument` 权限。
-- 插件入口为 `https://localhost:3000/index.html`。
-- Vite 开发服务提供 HTTPS，并代理 `/aw-proxy` 到 `http://127.0.0.1:5201`。
+- 插件入口为 `https://localhost:5201/index.html`。
+- 本地单服务在 `https://localhost:5201` 同时提供静态 add-in UI 和 `/aw-proxy` API。
 
 ### 3.2 前端侧边栏
 
@@ -74,16 +74,19 @@ Claude Free account session / compatible model provider
 - 当前默认 Sonnet model id 为 `claude-sonnet-4-6`。
 - Custom API 响应只读取 `content` 里的 text block，因此不会把 thinking block 当作最终回复显示。
 - 无文档上下文时支持直接聊天，不再强制要求 Word 文本。
+- 用户消息中粘贴 `http://` 或 `https://` URL 时，前端会通过本地 `/aw-proxy/web/fetch` 抓取网页纯文本并注入上下文。
 
 ### 3.5 本地代理
 
 - `local-proxy/aw_proxy.py` 提供 FastAPI app。
+- `local-proxy/aw_server.py` 提供单端口 server，挂载静态前端和 `/aw-proxy`。
 - 服务绑定目标为 `127.0.0.1:5201`。
 - 已提供：
   - `GET /health`
   - `GET /auth/status`
   - `POST /service/restart`
   - `GET /models`
+  - `GET /web/fetch`
   - upstream `POST /v1/messages`
   - upstream account admin routes
 - 已对 Claude web processor 做本地包装，用 prompt payload 发送合并后的系统提示和消息文本。
@@ -104,10 +107,11 @@ Claude Free account session / compatible model provider
 ### 3.7 开发脚本
 
 - `scripts/setup-proxy.sh`：创建 Python venv、安装代理依赖、写入本地 `.env` 和 `runtime.json`。
-- `scripts/start-proxy.sh`：启动本地代理。
-- `scripts/start-addin.sh`：启动 Vite add-in。
-- `scripts/dev-control.sh`：统一管理开发态 add-in 和 proxy 端口，支持 `start`、`stop`、`restart`、`status`、`word-watch`、`word-session`、`force-start`、`force-restart`。
+- `scripts/start-server.sh`：启动本地单服务。
+- `scripts/start-proxy.sh` / `scripts/start-addin.sh`：保留为开发调试入口。
+- `scripts/dev-control.sh`：统一管理开发态单服务端口，支持 `start`、`stop`、`restart`、`status`、`word-watch`、`word-session`、`force-start`、`force-restart`。
 - `scripts/sideload-mac.sh`：复制 manifest 到 Word for Mac 常见侧载目录。
+- `scripts/build-installer.sh`：构建 Mac `.pkg` 安装包。
 
 ## 4. 当前运行方式
 
@@ -125,8 +129,7 @@ npm run dev:agent-install
 
 `dev:agent-install` 会安装当前用户的 macOS LaunchAgent，并把 watcher 加载到后台。watcher 自身常驻，但端口默认关闭；检测到 Microsoft Word 运行后才确保：
 
-- add-in HTTPS dev server: `https://localhost:3000`
-- local proxy: `http://127.0.0.1:5201`
+- A\W local server: `https://localhost:5201`
 
 Word 完全退出并经过 `AW_WORD_GRACE_SECONDS` 后，watcher 会停止脚本管理的端口。关闭插件面板不立即杀端口，因为 Office.js task pane 的 unload 生命周期不适合作为本机进程控制边界。
 
@@ -174,15 +177,14 @@ npm install
 
 ## 5. 当前限制
 
-- 还不是一键安装包。
-- 还不是正式一键安装/启动流程；当前只有开发态统一启停脚本。
-- 用户仍需要本机 Node、Python、Office add-in dev cert 和 Word 侧载目录。
+- Mac `.pkg` 打包仍在验收中。
+- 开发态仍需要本机 Node、Python、Office add-in dev cert 和 Word 侧载目录。
 - 本地代理依赖 Claude Free account cookie，稳定性受上游网页/会话机制影响。
 - 历史记录仍是浏览器 `localStorage`，未按 Word 文档 fingerprint 分组。
 - 当前 RAG 是轻量上下文拼接，不是段落索引或向量检索。
 - 文档引用卡片、点击定位、批注读取、修订写回尚未实现。
 - Windows 侧载路径、证书、脚本和启动方式尚未适配。
-- 无 Web Fetch 能力 — 模型无法联网获取实时信息（已确认 Claude Free 无透传联网搜索）。
+- Web Fetch 仅支持读取用户粘贴的 URL，不做搜索引擎查询或模型 tool use。
 - 定位为「Word 里的 Claude 聊天框」而非文档操作 Agent（对比 word-GPT-Plus 有 25+ 文档读写工具）。
 
 ## 6. 安全边界
@@ -202,8 +204,7 @@ npm install
 - CSS 结构检查：读取 `addin/src/styles.css` 并校验括号平衡
 - Python 语法编译：`python3 -m py_compile local-proxy/aw_proxy.py`
 - 本地端口检查：
-  - add-in dev server: `127.0.0.1:3000`
-  - local proxy: `127.0.0.1:5201`
+  - local server: `127.0.0.1:5201`
 - 技能 HTTP 端点测试：registry.json + 3 个 SKILL.md 均返回 200
 - 技能唯一性验证：三个技能词汇重叠率 10-15%，互不干扰
 
@@ -211,49 +212,39 @@ npm install
 
 ### 8.1 组件与运行依赖打包
 
-- 固化 Node、Python、proxy runtime 和 Office dev cert 的版本要求。
-- 将 `npm install`、Python venv、proxy dependency、manifest 侧载纳入可复现安装流程。
+- 固化 PyInstaller runtime、A\W runtime 和 HTTPS 证书的版本/生成要求。
+- 将前端构建、代理 runtime、manifest 侧载纳入可复现安装流程。
 - 明确哪些文件是用户数据，哪些文件是可替换程序组件。
 - 增加卸载流程，清理 manifest、启动项、缓存和可选账户数据。
 
 ### 8.2 一键安装和启动流程复现
 
 - 做 Mac .pkg 标准安装器（非独立应用，仅安装 Word 插件所需后台服务）。
-- 参考 word-GPT-Plus 的 `release/` 目录结构，预留 Windows 适配空间。
+- 生成单一 `.pkg` 文件作为 Mac 分发物，预留 Windows 适配空间。
 - 安装时自动完成：
-  - 代理二进制部署（PyInstaller 编译 aw-proxy → 独立可执行文件，含 Python 运行时）
+  - 代理二进制部署（PyInstaller 编译 aw-server → 独立可执行文件，含 Python 运行时）
   - 自签名 HTTPS 证书生成和 Keychain 信任
   - manifest 侧载到 WEF 目录
   - 本地服务 LaunchAgent 自启配置
 - 安装后路径布局：
   - 系统级：`/Library/Application Support/AW/{bin/aw-server, static/, manifest.xml, uninstall.sh}`
   - 用户级：`~/Library/Application Support/AW/{config.json, certs/, data/, logs/, .env}`
-  - LaunchAgent：`~/Library/LaunchAgents/com.aw.word-server.plist`
+  - LaunchAgent：`~/Library/LaunchAgents/com.aw.word-watcher.plist`
   - WEF 侧载：`~/Library/Containers/com.microsoft.Word/Data/Documents/wef/aw-manifest.xml`
-- 提供一个用户双击即可卸载的 `A-W-Uninstall.command` 脚本。
-- 将现在的双终端开发启动流程收敛为单服务（aw_server.py：API + 静态文件均在端口 5201）。
+- 安装内置 `uninstall.sh`，用于停止 watcher、移除 manifest、证书和系统组件。
+- 单服务 `aw_server.py` 已收敛 API + 静态文件到端口 5201。
 - 打包流程脱敏步骤：
   - `DEFAULT_SETTINGS` 中 apiKey/adminKey 清空
   - 前端运行时从 `/config.json` 获取安装时生成的随机密钥
   - 构建前检查无开发者密钥/路径泄露
-- 详细打包方案见 `.claude/plans/proud-dreaming-gray.md`。
+- 详细打包方案见桌面计划文档 `proud-dreaming-gray.md`。
 
 ### 8.3 Web Fetch 能力
 
-- 当前模型无联网搜索能力（已验证—Claude Free 无 tool use 联网透传）。
-- 后续在 aw-proxy 添加 `GET /fetch?url=<url>` 端点，服务端抓取网页内容并返回纯文本。
-- 前端增加 Web Fetch 快捷任务或 URL 粘贴自动识别，将抓取结果注入上下文。
-- 提供技能化封装（`/fetch`），与现有 summarize/humanize/review 并列。
+- 已实现用户粘贴 URL 的服务端抓取和上下文注入。
+- 暂不做搜索引擎查询、浏览器式联网 agent 或模型 tool use。
 
-### 8.4 Word 文档能力补齐
-
-- 建立段落级 chunk 索引和标题路径。
-- 回复中输出引用标记并渲染为引用卡片。
-- 点击引用后定位到 Word 段落。
-- 增加批注读取和修订文本处理。
-- 写回时尽量继承目标段落样式，并评估 Track Changes 集成。
-
-### 8.5 Windows 适配
+### 8.4 Windows 适配
 
 - 调研 Windows Office Add-in sideload 路径和信任配置。
 - 替换或补充 shell 脚本为 PowerShell / .msi installer 流程。
@@ -273,7 +264,7 @@ npm install
 
 ### 10.1 内部参考
 
-- 打包方案：`.claude/plans/proud-dreaming-gray.md`
+- 打包方案：桌面计划文档 `proud-dreaming-gray.md`
 - 技能文档：`addin/public/skills/skill-one/SKILL.md` (summarize)、`skill-two/SKILL.md` (humanize)、`skill-three/SKILL.md` (review)
 - Humanizer 参考：[blader/humanizer](https://github.com/blader/humanizer)
 - Academic Paper Reviewer 参考：[Imbad0202/academic-research-skills](https://github.com/Imbad0202/academic-research-skills/tree/main/academic-paper-reviewer)

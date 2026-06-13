@@ -4,6 +4,9 @@ dist/
 __pycache__/
 *.py[cod]
 .aw-runtime/
+build/
+release/
+*.pkg
 
 addin/dist/
 addin/.vite/

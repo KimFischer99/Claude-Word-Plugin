@@ -18,6 +18,7 @@
     "dev:force-restart": "./scripts/dev-control.sh force-restart",
     "dev:addin": "npm --workspace addin run dev",
     "build": "npm --workspace addin run build",
+    "build:installer": "./scripts/build-installer.sh",
     "typecheck": "npm --workspace addin run typecheck"
   },
   "workspaces": [

@@ -17,12 +17,15 @@ fi
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/python" -m pip install -r "$PROXY_DIR/requirements.txt"
 
+API_KEY="$(openssl rand -hex 24)"
+ADMIN_KEY="$(openssl rand -hex 24)"
+
 cat > "$ENV_FILE" <<EOF
 HOST=127.0.0.1
 PORT=5201
 DATA_FOLDER=$DATA_DIR
-API_KEYS=aw-local-dev-key
-ADMIN_API_KEYS=aw-local-admin-key
+API_KEYS=$API_KEY
+ADMIN_API_KEYS=$ADMIN_KEY
 LOG_LEVEL=INFO
 LOG_TO_FILE=true
 LOG_FILE_PATH=$PROXY_DIR/logs/aw.log
@@ -32,8 +35,8 @@ EOF
 cat > "$RUNTIME_FILE" <<EOF
 {
   "baseUrl": "http://127.0.0.1:5201",
-  "apiKey": "aw-local-dev-key",
-  "adminKey": "aw-local-admin-key"
+  "apiKey": "$API_KEY",
+  "adminKey": "$ADMIN_KEY"
 }
 EOF
 

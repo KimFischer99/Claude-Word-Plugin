@@ -1,11 +1,20 @@
 from contextlib import asynccontextmanager
 import base64
+from html import unescape
+from html.parser import HTMLParser
+import ipaddress
 import random
+import re
 import string
+import socket
 import time
 from typing import Any, List
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from pydantic import BaseModel
@@ -30,6 +39,145 @@ class ServiceRestartResponse(BaseModel):
     status: str
     connected: bool
     accounts: dict[str, Any]
+
+
+class WebFetchResponse(BaseModel):
+    url: str
+    title: str
+    text: str
+    chars: int
+    truncated: bool
+
+
+MAX_WEB_BYTES = 2 * 1024 * 1024
+MAX_WEB_TEXT_CHARS = 5000
+WEB_FETCH_TIMEOUT_SECONDS = 8
+WEB_USER_AGENT = "A-W-Word-Addin/0.1"
+
+
+class _ReadableHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._ignored_depth = 0
+        self._in_title = False
+        self.title_parts: list[str] = []
+        self.text_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "svg"}:
+            self._ignored_depth += 1
+        elif normalized == "title":
+            self._in_title = True
+        elif normalized in {"p", "br", "div", "li", "tr", "h1", "h2", "h3"}:
+            self.text_parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "svg"} and self._ignored_depth:
+            self._ignored_depth -= 1
+        elif normalized == "title":
+            self._in_title = False
+        elif normalized in {"p", "div", "li", "tr", "h1", "h2", "h3"}:
+            self.text_parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_depth:
+            return
+
+        text = data.strip()
+        if not text:
+            return
+
+        if self._in_title:
+            self.title_parts.append(text)
+        else:
+            self.text_parts.append(text)
+
+
+def _collapse_web_text(value: str) -> str:
+    lines = [re.sub(r"[ \t\f\v]+", " ", line).strip() for line in value.splitlines()]
+    compact_lines = [line for line in lines if line]
+    return "\n".join(compact_lines)
+
+
+def _validate_public_http_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Only http:// and https:// URLs are supported.")
+
+    hostname = parsed.hostname.lower()
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".localhost"):
+        raise HTTPException(status_code=400, detail="Local URLs are not allowed.")
+
+    try:
+        resolved = socket.getaddrinfo(hostname, parsed.port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise HTTPException(status_code=400, detail=f"Could not resolve URL host: {hostname}.") from exc
+
+    for item in resolved:
+        address = item[4][0]
+        ip = ipaddress.ip_address(address)
+        if (
+            ip.is_loopback
+            or ip.is_private
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise HTTPException(status_code=400, detail="Local or private network URLs are not allowed.")
+
+    return parsed.geturl()
+
+
+class _SafeRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_public_http_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _read_web_url(raw_url: str) -> WebFetchResponse:
+    safe_url = _validate_public_http_url(raw_url)
+    request = Request(safe_url, headers={"User-Agent": WEB_USER_AGENT})
+    opener = build_opener(_SafeRedirectHandler)
+
+    try:
+        with opener.open(request, timeout=WEB_FETCH_TIMEOUT_SECONDS) as response:
+            final_url = _validate_public_http_url(response.geturl())
+            content_type = response.headers.get_content_type()
+            if content_type not in {"text/html", "text/plain", "application/xhtml+xml"}:
+                raise HTTPException(status_code=415, detail=f"Unsupported content type: {content_type}.")
+
+            charset = response.headers.get_content_charset() or "utf-8"
+            raw_body = response.read(MAX_WEB_BYTES + 1)
+    except HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail=f"Web fetch failed with HTTP {exc.code}.") from exc
+    except URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Web fetch failed: {exc.reason}.") from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Web fetch timed out.") from exc
+
+    body_truncated = len(raw_body) > MAX_WEB_BYTES
+    decoded = raw_body[:MAX_WEB_BYTES].decode(charset, errors="replace")
+
+    if content_type in {"text/html", "application/xhtml+xml"}:
+        parser = _ReadableHtmlParser()
+        parser.feed(decoded)
+        title = _collapse_web_text(unescape(" ".join(parser.title_parts)))
+        text = _collapse_web_text(unescape("\n".join(parser.text_parts)))
+    else:
+        title = ""
+        text = _collapse_web_text(unescape(decoded))
+
+    text = text[:MAX_WEB_TEXT_CHARS]
+    return WebFetchResponse(
+        url=final_url,
+        title=title[:200],
+        text=text,
+        chars=len(text),
+        truncated=body_truncated or len(text) >= MAX_WEB_TEXT_CHARS,
+    )
 
 
 def _patch_event_parser() -> None:
@@ -196,8 +344,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://127.0.0.1:3000",
-        "https://localhost:3000",
+        "https://127.0.0.1:5201",
+        "https://localhost:5201",
     ],
     allow_origin_regex=r"^https://(127\.0\.0\.1|localhost):\d+$",
     allow_credentials=True,
@@ -215,6 +363,15 @@ def _require_admin_key(authorization: str | None) -> None:
         raise HTTPException(status_code=403, detail="Invalid admin key.")
 
 
+def _require_api_key(authorization: str | None) -> None:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing API key.")
+
+    supplied_key = authorization.removeprefix("Bearer ").strip()
+    if supplied_key not in settings.api_keys:
+        raise HTTPException(status_code=403, detail="Invalid API key.")
+
+
 def _remove_browser_token_routes() -> None:
     token_path = "/" + "oa" + "uth"
     app.router.routes = [
@@ -228,6 +385,24 @@ def _remove_browser_token_routes() -> None:
 async def health() -> dict[str, str]:
     stats = await account_manager.get_status()
     return {"status": "healthy" if stats["valid_accounts"] > 0 else "degraded"}
+
+
+@app.get("/config.json")
+async def runtime_config() -> dict[str, str]:
+    return {
+        "baseUrl": "/aw-proxy",
+        "apiKey": settings.api_keys[0] if settings.api_keys else "",
+        "adminKey": settings.admin_api_keys[0] if settings.admin_api_keys else "",
+    }
+
+
+@app.get("/web/fetch", response_model=WebFetchResponse)
+async def fetch_web_url(
+    url: str,
+    authorization: str | None = Header(default=None),
+) -> WebFetchResponse:
+    _require_api_key(authorization)
+    return await run_in_threadpool(_read_web_url, url)
 
 
 @app.get("/auth/status")
