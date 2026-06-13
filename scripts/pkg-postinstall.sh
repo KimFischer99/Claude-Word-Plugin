@@ -84,8 +84,8 @@ EOF
   rm -f "$CERT_CONFIG"
 fi
 
-chmod 0600 "$CERT_KEY_FILE"
-chmod 0644 "$CERT_FILE" "$CONFIG_FILE" "$ENV_FILE"
+chmod 0600 "$CERT_KEY_FILE" "$CONFIG_FILE" "$ENV_FILE"
+chmod 0644 "$CERT_FILE"
 chown -R "$USER_UID:$USER_GID" "$USER_DIR"
 
 security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CERT_FILE" >/dev/null 2>&1 || true
