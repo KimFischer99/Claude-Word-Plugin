@@ -1267,3 +1267,31 @@ textarea:focus-visible {
     height: 33px;
   }
 }
+
+.dangerButton {
+  background: transparent;
+  color: var(--aw-danger);
+  border: 1px solid var(--aw-danger);
+  border-radius: 8px;
+  padding: 7px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dangerButton:hover {
+  background: var(--aw-danger);
+  color: #fff;
+}
+
+.dangerButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.drawerSectionDanger {
+  border-top: 1px solid rgba(155, 63, 37, 0.25);
+  padding-top: 18px;
+  margin-top: 8px;
+}

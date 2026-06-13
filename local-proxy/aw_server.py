@@ -9,7 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from aw_proxy import app as proxy_app
+# PyInstaller: tiktoken discovers encodings via pkgutil.iter_modules on
+# tiktoken_ext namespace package, which fails inside a PyInstaller bundle
+# because the plugin files don't exist on disk. Monkey-patch discovery
+# so it returns the bundled plugins directly without filesystem scanning.
+import tiktoken.registry as _tiktoken_registry  # noqa: E402
+
+_TIKTOKEN_PLUGINS = ["tiktoken_ext.openai_public"]
+_tiktoken_registry._available_plugin_modules = lambda: _TIKTOKEN_PLUGINS
+if hasattr(_tiktoken_registry._available_plugin_modules, "cache_clear"):
+    _tiktoken_registry._available_plugin_modules.cache_clear()
+
+from aw_proxy import app as proxy_app  # noqa: E402
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]

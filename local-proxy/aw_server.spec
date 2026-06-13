@@ -6,6 +6,8 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 runtime_datas = collect_data_files("app", includes=["locales/*.json"])
 runtime_binaries = []
 runtime_hiddenimports = collect_submodules("app")
+runtime_hiddenimports += collect_submodules("tiktoken_ext")
+runtime_hiddenimports += ["tiktoken_ext", "tiktoken_ext.openai_public"]
 
 
 a = Analysis(

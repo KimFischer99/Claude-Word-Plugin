@@ -440,6 +440,47 @@ async def models() -> dict[str, list[dict[str, str]]]:
     }
 
 
+class UninstallResponse(BaseModel):
+    status: str
+
+
+@app.post("/service/uninstall", response_model=UninstallResponse)
+async def uninstall_addin(
+    authorization: str | None = Header(default=None),
+    purge_data: bool = False,
+) -> UninstallResponse:
+    """Uninstall A\\W Word add-in.
+
+    Spawns a fully detached background process that prompts for the
+    administrator password via the macOS GUI, then runs the uninstall
+    script.  The server itself is killed as part of uninstall — the
+    HTTP response is sent before the background process begins.
+    """
+    _require_admin_key(authorization)
+
+    import subprocess  # noqa: E402
+
+    purge_flag = " --purge-data" if purge_data else ""
+    uninstall_script = "/Library/Application Support/AW/uninstall.sh"
+    apple_script = (
+        f'do shell script "{uninstall_script}{purge_flag}"'
+        f' with administrator privileges'
+    )
+    # Sleep 2 s so the server can flush the HTTP response before being killed.
+    shell_command = f"sleep 2 && /usr/bin/osascript -e '{apple_script}'"
+
+    subprocess.Popen(
+        ["nohup", "bash", "-c", shell_command],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        cwd="/",
+    )
+
+    return UninstallResponse(status="uninstalling")
+
+
 app.include_router(api_router)
 _remove_browser_token_routes()
 app.add_exception_handler(AppError, app_exception_handler)

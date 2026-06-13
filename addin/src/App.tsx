@@ -246,6 +246,12 @@ const UI_TEXT = {
     userRole: "User Role",
     zhChinese: "简体中文",
     english: "English",
+    uninstallTitle: "Uninstall A\\W",
+    uninstallDescription:
+      "Remove the A\\W add-in from Microsoft Word. The sidebar will close and a password prompt will appear.",
+    uninstallKeepData: "Uninstall (Keep My Data)",
+    uninstallRemoveAll: "Uninstall All",
+    uninstalling: "Uninstalling...",
   },
   "zh-CN": {
     addAccount: "添加账户",
@@ -315,6 +321,12 @@ const UI_TEXT = {
     userRole: "用户角色",
     zhChinese: "简体中文",
     english: "English",
+    uninstallTitle: "卸载 A\\W",
+    uninstallDescription:
+      "从 Microsoft Word 中移除 A\\W 插件。侧边栏将关闭并弹出系统密码提示。",
+    uninstallKeepData: "卸载（保留数据）",
+    uninstallRemoveAll: "全部卸载",
+    uninstalling: "卸载中...",
   },
 } as const;
 
@@ -895,6 +907,7 @@ export function App() {
   const [defaultAwProfile, setDefaultAwProfile] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isUninstalling, setIsUninstalling] = useState(false);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -1486,6 +1499,33 @@ export function App() {
       await checkConnection({ quiet: true });
     } catch (accountError) {
       setError(explainError(accountError));
+    }
+  }
+
+  async function uninstallAddin(purgeData: boolean) {
+    if (isUninstalling) return;
+    setIsUninstalling(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${localBaseUrl}/service/uninstall?purge_data=${purgeData}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localAdminKey}` },
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Uninstall failed with HTTP ${response.status}.`);
+      }
+      // The server spawns a detached uninstall process. The macOS admin
+      // password dialog appears within ~2 s. If the user cancels it, the
+      // server stays alive and the add-in remains functional — reset the
+      // button state so they can retry (or simply continue using the add-in).
+      setSettingsOpen(false);
+      setIsUninstalling(false);
+    } catch (uninstallError) {
+      setIsUninstalling(false);
+      setError(explainError(uninstallError));
     }
   }
 
@@ -2325,6 +2365,29 @@ export function App() {
                 value={awProfile}
                 onChange={(event) => saveAwProfile(event.target.value)}
               />
+            </section>
+
+            <section className="drawerSection drawerSectionDanger">
+              <div className="sectionTitle">{t("uninstallTitle")}</div>
+              <p className="drawerNote">{t("uninstallDescription")}</p>
+              <div className="serviceActions">
+                <button
+                  type="button"
+                  className="dangerButton"
+                  onClick={() => void uninstallAddin(false)}
+                  disabled={isUninstalling}
+                >
+                  {isUninstalling ? t("uninstalling") : t("uninstallKeepData")}
+                </button>
+                <button
+                  type="button"
+                  className="dangerButton"
+                  onClick={() => void uninstallAddin(true)}
+                  disabled={isUninstalling}
+                >
+                  {isUninstalling ? t("uninstalling") : t("uninstallRemoveAll")}
+                </button>
+              </div>
             </section>
 
           </aside>
