@@ -39,6 +39,12 @@ if printf '%s\n' "$PAYLOAD_LIST" | grep -F "/._" >/dev/null; then
   exit 1
 fi
 
+LEGACY_RUNTIME_PATTERN="clo""ve"
+if printf '%s\n' "$PAYLOAD_LIST" | grep -i "$LEGACY_RUNTIME_PATTERN" >/dev/null; then
+  echo "FAIL: package payload contains product-facing legacy runtime paths" >&2
+  exit 1
+fi
+
 if [ -n "$PAYLOAD_ROOT" ]; then
   MANIFEST="$(find "$PAYLOAD_ROOT" -path '*/Library/Application Support/AW/manifest.xml' -type f | head -n 1)"
   if [ -z "$MANIFEST" ]; then
@@ -63,6 +69,11 @@ if [ -n "$PAYLOAD_ROOT" ]; then
 
   if grep -R -I -n "${GREP_ARGS[@]}" "$PAYLOAD_ROOT" >/dev/null; then
     echo "FAIL: package contains a development key, local path, or legacy dev host" >&2
+    exit 1
+  fi
+
+  if grep -R -I -i -n "$LEGACY_RUNTIME_PATTERN" "$PAYLOAD_ROOT" >/dev/null; then
+    echo "FAIL: package contains product-facing legacy runtime references" >&2
     exit 1
   fi
 fi
