@@ -177,7 +177,7 @@ npm install
 
 ## 5. 当前限制
 
-- Mac `.pkg` 打包仍在验收中。
+- Mac `.pkg` 一键安装流程已跑通：安装后 LaunchAgent 常驻，打开 Word 自动拉起 `https://localhost:5201` 侧边栏服务，完全退出 Word 后自动关闭端口。PyInstaller 已将 Python 运行时、代理、前端静态资源和 tiktoken 编码文件打包为独立可执行文件，不依赖本机 Node/Python。
 - 开发态仍需要本机 Node、Python、Office add-in dev cert 和 Word 侧载目录。
 - 本地代理依赖 Claude Free account cookie，稳定性受上游网页/会话机制影响。
 - 历史记录仍是浏览器 `localStorage`，未按 Word 文档 fingerprint 分组。
@@ -259,6 +259,20 @@ npm install
 - 不承诺 Claude Free web/session 接入的长期稳定性。
 - 不在当前阶段做完整 Windows 发行包。
 - 不做文档 Agent（操作 Word 的读写/格式化/搜索工具链，如 word-GPT-Plus 的 25+ 工具）。
+
+### 9.5 已知待修复问题
+
+#### 9.5.1 Settings 页面 Uninstall 区域设计问题
+
+当前 Uninstall 区域位于 Settings 抽屉底部，存在比例失调问题需要进一步调整视觉设计。
+
+#### 9.5.2 卸载流程未实际执行
+
+侧边栏点击 Uninstall 并输入系统管理员密码后，插件仍存在于 Word 中且端口服务未停止。说明卸载脚本（`/Library/Application Support/AW/uninstall.sh`）未被正确触发或执行失败，需要排查：
+
+- `POST /service/uninstall` 端点是否正确派生后台进程
+- `osascript` 的 `do shell script … with administrator privileges` 是否实际执行了安装时部署的 `uninstall.sh`
+- 卸载后 LaunchAgent、manifest、系统文件、用户数据是否被正确清理
 
 ## 10. 参考项目
 
