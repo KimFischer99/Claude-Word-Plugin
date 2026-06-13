@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
-runtime_datas, runtime_binaries, runtime_hiddenimports = collect_all("app")
+runtime_datas = collect_data_files("app", includes=["locales/*.json"])
+runtime_binaries = []
+runtime_hiddenimports = collect_submodules("app")
 
 
 a = Analysis(

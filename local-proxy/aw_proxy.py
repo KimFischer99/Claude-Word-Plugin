@@ -23,7 +23,6 @@ from app.api.main import api_router
 from app.core.config import settings
 from app.core.error_handler import app_exception_handler
 from app.core.exceptions import AppError, NoValidMessagesError
-from app.core.static import register_static_routes
 from app.models.internal import ClaudeWebRequest
 from app.processors.claude_ai.claude_web_processor import ClaudeWebProcessor
 from app.services.account import account_manager
@@ -444,4 +443,3 @@ async def models() -> dict[str, list[dict[str, str]]]:
 app.include_router(api_router)
 _remove_browser_token_routes()
 app.add_exception_handler(AppError, app_exception_handler)
-register_static_routes(app)
