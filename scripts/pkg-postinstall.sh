@@ -156,9 +156,15 @@ EOF
 chmod 0644 "$AGENT_PLIST"
 chown "$USER_UID:$USER_GID" "$AGENT_PLIST"
 
+launchctl bootout "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
 launchctl bootout "gui/$USER_UID" "$AGENT_PLIST" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$USER_UID" "$AGENT_PLIST"
 launchctl enable "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+if ! launchctl bootstrap "gui/$USER_UID" "$AGENT_PLIST"; then
+  sleep 1
+  launchctl bootout "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$USER_UID" "$AGENT_PLIST" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$USER_UID" "$AGENT_PLIST"
+fi
 launchctl kickstart -k "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
 
 echo "A\\W Word add-in installed for $USER_NAME."
