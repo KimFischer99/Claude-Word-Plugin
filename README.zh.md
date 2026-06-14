@@ -1,6 +1,6 @@
-# Claude Word Plugin
+# Claude Word Plugin (A\W)
 
-Claude Word Plugin 是一个面向 Microsoft Word 的文档协作插件，参考 Claude for Word 的交互方式设计，专注于在 Word 里读取选中文本、文档片段、引用回复和用户主动注入的上下文，辅助写作、审阅和总结。
+A\W 是一个面向 Microsoft Word 的文档协作插件，参考 Claude for Word 的交互方式设计，专注于在 Word 里读取选中文本、文档片段、引用回复和用户主动注入的上下文，辅助写作、审阅和总结。
 
 插件可以通过本地代理把 Claude Web 会话转换为类似 API 的接口导入到 Word 插件中使用；也支持 Claude Web 多账户路由。如果你有自己的 Anthropic 兼容 API，也可以直接配置自定义接口。
 
