@@ -1,6 +1,6 @@
-# Claude Word Plugin
+# Claude Word Plugin (A\W)
 
-Claude Word Plugin is a Microsoft Word add-in for document collaboration with Claude-style assistance. It is inspired by the Claude for Word workflow and focuses on reading selected text, document excerpts, quoted replies, and user-provided context inside Word.
+A\W is a Microsoft Word add-in for document collaboration with Claude-style assistance. It is inspired by the Claude for Word workflow and focuses on reading selected text, document excerpts, quoted replies, and user-provided context inside Word.
 
 The add-in can use a local proxy to turn a Claude Web session into an API-like provider for the Word plugin. It also supports multi-account routing for Claude Web accounts and a custom Anthropic-compatible API endpoint if you prefer to bring your own provider.
 
