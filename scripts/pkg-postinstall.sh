@@ -24,22 +24,49 @@ if [ "$USER_NAME" = "root" ] || [ -z "$USER_HOME" ]; then
   exit 1
 fi
 
+read_config_value() {
+  local key="$1"
+  local value=""
+
+  if [ -x /usr/bin/plutil ]; then
+    value="$(/usr/bin/plutil -extract "$key" raw -o - "$CONFIG_FILE" 2>/dev/null || true)"
+  fi
+
+  if [ -z "$value" ]; then
+    value="$(sed -nE "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\\1/p" "$CONFIG_FILE" | head -n 1)"
+  fi
+
+  printf '%s' "$value"
+}
+
+write_config() {
+  local api_key="$1"
+  local admin_key="$2"
+
+  cat > "$CONFIG_FILE" <<EOF
+{
+  "baseUrl": "/aw-proxy",
+  "apiKey": "$api_key",
+  "adminKey": "$admin_key"
+}
+EOF
+}
+
 install -d -m 0755 "$USER_DIR" "$CERT_DIR" "$DATA_DIR" "$LOG_DIR" "$USER_HOME/Library/LaunchAgents" "$WEF_DIR" "$OFFICE_ADDINS_DIR"
 chown -R "$USER_UID:$USER_GID" "$USER_DIR" "$USER_HOME/Library/LaunchAgents" "$WEF_DIR" "$OFFICE_ADDINS_DIR"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   API_KEY="$(openssl rand -hex 24)"
   ADMIN_KEY="$(openssl rand -hex 24)"
-  cat > "$CONFIG_FILE" <<EOF
-{
-  "baseUrl": "/aw-proxy",
-  "apiKey": "$API_KEY",
-  "adminKey": "$ADMIN_KEY"
-}
-EOF
+  write_config "$API_KEY" "$ADMIN_KEY"
 else
-  API_KEY="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("apiKey",""))' "$CONFIG_FILE")"
-  ADMIN_KEY="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("adminKey",""))' "$CONFIG_FILE")"
+  API_KEY="$(read_config_value apiKey)"
+  ADMIN_KEY="$(read_config_value adminKey)"
+  if [ -z "$API_KEY" ] || [ -z "$ADMIN_KEY" ]; then
+    API_KEY="$(openssl rand -hex 24)"
+    ADMIN_KEY="$(openssl rand -hex 24)"
+    write_config "$API_KEY" "$ADMIN_KEY"
+  fi
 fi
 
 cat > "$ENV_FILE" <<EOF
