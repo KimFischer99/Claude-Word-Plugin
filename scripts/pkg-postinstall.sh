@@ -105,6 +105,15 @@ cat > "$AGENT_PLIST" <<EOF
   <array>
     <string>$SYSTEM_DIR/bin/aw-word-watcher</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AW_PREWARM_SECONDS</key>
+    <string>300</string>
+    <key>AW_WORD_GRACE_SECONDS</key>
+    <string>300</string>
+    <key>AW_WORD_POLL_SECONDS</key>
+    <string>0.5</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -123,5 +132,6 @@ chown "$USER_UID:$USER_GID" "$AGENT_PLIST"
 launchctl bootout "gui/$USER_UID" "$AGENT_PLIST" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$USER_UID" "$AGENT_PLIST"
 launchctl enable "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+launchctl kickstart -k "gui/$USER_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
 
 echo "A\\W Word add-in installed for $USER_NAME."

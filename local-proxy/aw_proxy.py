@@ -3,6 +3,7 @@ import base64
 from html import unescape
 from html.parser import HTMLParser
 import ipaddress
+from pathlib import Path
 import random
 import re
 import string
@@ -447,7 +448,7 @@ class UninstallResponse(BaseModel):
 @app.post("/service/uninstall", response_model=UninstallResponse)
 async def uninstall_addin(
     authorization: str | None = Header(default=None),
-    purge_data: bool = False,
+    purge_data: bool = True,
 ) -> UninstallResponse:
     """Uninstall A\\W Word add-in.
 
@@ -458,19 +459,38 @@ async def uninstall_addin(
     """
     _require_admin_key(authorization)
 
+    import shlex  # noqa: E402
     import subprocess  # noqa: E402
 
-    purge_flag = " --purge-data" if purge_data else ""
     uninstall_script = "/Library/Application Support/AW/uninstall.sh"
-    apple_script = (
-        f'do shell script "{uninstall_script}{purge_flag}"'
-        f' with administrator privileges'
-    )
-    # Sleep 2 s so the server can flush the HTTP response before being killed.
-    shell_command = f"sleep 2 && /usr/bin/osascript -e '{apple_script}'"
+    if Path(uninstall_script).exists():
+        script_command = f"{shlex.quote(uninstall_script)} --purge-data"
+        apple_script = f"do shell script {json.dumps(script_command)} with administrator privileges"
+        # Sleep 2 s so the server can flush the HTTP response before being killed.
+        shell_command = 'sleep 2 && /usr/bin/osascript -e "$1"'
+        popen_args = ["nohup", "bash", "-c", shell_command, "aw-uninstall", apple_script]
+    else:
+        home = Path.home()
+        root_dir = Path(__file__).resolve().parents[1]
+        dev_control = root_dir / "scripts" / "dev-control.sh"
+        runtime_dir = root_dir / ".aw-runtime"
+        user_support_dir = home / "Library/Application Support/AW"
+        manifest_paths = [
+            home / "Library/Containers/com.microsoft.Word/Data/Documents/wef/aw-manifest.xml",
+            home / "Library/Containers/com.microsoft.Word/Data/Documents/Office Add-ins/aw-manifest.xml",
+        ]
+        cleanup_parts = [
+            f"{shlex.quote(str(dev_control))} agent-uninstall >/dev/null 2>&1 || true",
+            f"{shlex.quote(str(dev_control))} stop >/dev/null 2>&1 || true",
+            *[f"rm -f {shlex.quote(str(path))}" for path in manifest_paths],
+            f"rm -rf {shlex.quote(str(runtime_dir))}",
+            f"rm -rf {shlex.quote(str(user_support_dir))}",
+        ]
+        shell_command = "sleep 2; " + "; ".join(cleanup_parts)
+        popen_args = ["nohup", "bash", "-c", shell_command]
 
     subprocess.Popen(
-        ["nohup", "bash", "-c", shell_command],
+        popen_args,
         start_new_session=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

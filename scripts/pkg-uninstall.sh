@@ -21,6 +21,10 @@ SERVER_PID_FILE="$USER_DIR/pids/aw-server.pid"
 WEF_MANIFEST="$USER_HOME/Library/Containers/com.microsoft.Word/Data/Documents/wef/aw-manifest.xml"
 OFFICE_ADDINS_MANIFEST="$USER_HOME/Library/Containers/com.microsoft.Word/Data/Documents/Office Add-ins/aw-manifest.xml"
 
+run_as_user() {
+  launchctl asuser "$USER_UID" sudo -u "$USER_NAME" "$@" >/dev/null 2>&1 || "$@" >/dev/null 2>&1 || true
+}
+
 launchctl bootout "gui/$USER_UID" "$AGENT_PLIST" >/dev/null 2>&1 || true
 rm -f "$AGENT_PLIST"
 
@@ -34,7 +38,7 @@ if [ -f "$SERVER_PID_FILE" ]; then
   rm -f "$SERVER_PID_FILE"
 fi
 
-rm -f "$WEF_MANIFEST" "$OFFICE_ADDINS_MANIFEST"
+run_as_user rm -f "$WEF_MANIFEST" "$OFFICE_ADDINS_MANIFEST"
 security delete-certificate -c "A-W Localhost" /Library/Keychains/System.keychain >/dev/null 2>&1 || true
 rm -rf "$SYSTEM_DIR"
 

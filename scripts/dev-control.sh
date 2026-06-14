@@ -11,7 +11,9 @@ AGENT_PLIST="$HOME/Library/LaunchAgents/${AGENT_LABEL}.plist"
 
 SERVER_PORT=5201
 LEGACY_ADDIN_PORT=3000
-WORD_GRACE_SECONDS="${AW_WORD_GRACE_SECONDS:-10}"
+WORD_GRACE_SECONDS="${AW_WORD_GRACE_SECONDS:-300}"
+WORD_POLL_SECONDS="${AW_WORD_POLL_SECONDS:-0.5}"
+PREWARM_SECONDS="${AW_PREWARM_SECONDS:-0}"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -34,7 +36,9 @@ Commands:
   force-restart Stop then force the local server online
 
 Environment:
-  AW_WORD_GRACE_SECONDS=10  Seconds to wait after Word disappears before stopping
+  AW_WORD_GRACE_SECONDS=300 Seconds to wait after Word disappears before stopping
+  AW_WORD_POLL_SECONDS=0.5 Seconds between Word lifecycle checks
+  AW_PREWARM_SECONDS=0     Seconds to keep the server warm after watcher starts
   AW_WORD_RUNNING=1         Test override: behave as if Word is running
 USAGE
 }
@@ -322,6 +326,12 @@ write_agent_plist() {
   <dict>
     <key>PATH</key>
     <string>${agent_path}</string>
+    <key>AW_WORD_GRACE_SECONDS</key>
+    <string>${WORD_GRACE_SECONDS}</string>
+    <key>AW_WORD_POLL_SECONDS</key>
+    <string>${WORD_POLL_SECONDS}</string>
+    <key>AW_PREWARM_SECONDS</key>
+    <string>60</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -421,9 +431,13 @@ word_watch() {
   echo "Press Ctrl+C to stop watcher and services."
 
   trap 'stop_all 1; exit 130' INT TERM
+  local prewarm_until
+  prewarm_until=$(( $(date +%s) + PREWARM_SECONDS ))
 
   while true; do
-    if word_is_running; then
+    local now
+    now="$(date +%s)"
+    if word_is_running || [ "$now" -lt "$prewarm_until" ]; then
       if ! services_are_listening; then
         start_all
       fi
@@ -434,7 +448,7 @@ word_watch() {
       fi
     fi
 
-    sleep 2
+    sleep "$WORD_POLL_SECONDS"
   done
 }
 

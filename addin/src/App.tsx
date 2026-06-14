@@ -247,10 +247,8 @@ const UI_TEXT = {
     zhChinese: "简体中文",
     english: "English",
     uninstallTitle: "Uninstall A\\W",
-    uninstallDescription:
-      "Remove the A\\W add-in from Microsoft Word. The sidebar will close and a password prompt will appear.",
-    uninstallKeepData: "Uninstall (Keep My Data)",
-    uninstallRemoveAll: "Uninstall All",
+    uninstallButton: "Uninstall",
+    uninstallStarted: "System password prompt requested. The sidebar may close during uninstall.",
     uninstalling: "Uninstalling...",
   },
   "zh-CN": {
@@ -322,10 +320,8 @@ const UI_TEXT = {
     zhChinese: "简体中文",
     english: "English",
     uninstallTitle: "卸载 A\\W",
-    uninstallDescription:
-      "从 Microsoft Word 中移除 A\\W 插件。侧边栏将关闭并弹出系统密码提示。",
-    uninstallKeepData: "卸载（保留数据）",
-    uninstallRemoveAll: "全部卸载",
+    uninstallButton: "卸载",
+    uninstallStarted: "已请求系统密码提示。卸载过程中侧边栏可能会关闭。",
     uninstalling: "卸载中...",
   },
 } as const;
@@ -889,6 +885,7 @@ export function App() {
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [error, setError] = useState<string>("");
   const [testStatus, setTestStatus] = useState<string>("");
+  const [uninstallStatus, setUninstallStatus] = useState<string>("");
   const [prompt, setPrompt] = useState("");
   const [contextSummary, setContextSummary] = useState(() =>
     settings.language === "zh-CN" ? "仅聊天" : "Chat only",
@@ -1502,13 +1499,14 @@ export function App() {
     }
   }
 
-  async function uninstallAddin(purgeData: boolean) {
+  async function uninstallAddin() {
     if (isUninstalling) return;
     setIsUninstalling(true);
     setError("");
+    setUninstallStatus("");
 
     try {
-      const response = await fetch(`${localBaseUrl}/service/uninstall?purge_data=${purgeData}`, {
+      const response = await fetch(`${localBaseUrl}/service/uninstall?purge_data=true`, {
         method: "POST",
         headers: { Authorization: `Bearer ${localAdminKey}` },
       });
@@ -1521,7 +1519,7 @@ export function App() {
       // password dialog appears within ~2 s. If the user cancels it, the
       // server stays alive and the add-in remains functional — reset the
       // button state so they can retry (or simply continue using the add-in).
-      setSettingsOpen(false);
+      setUninstallStatus(t("uninstallStarted"));
       setIsUninstalling(false);
     } catch (uninstallError) {
       setIsUninstalling(false);
@@ -2045,7 +2043,10 @@ export function App() {
                 className="iconButton"
                 type="button"
                 aria-label={t("closeSettings")}
-                onClick={() => setSettingsOpen(false)}
+                onClick={() => {
+                  setUninstallStatus("");
+                  setSettingsOpen(false);
+                }}
               >
                 <X size={18} />
               </button>
@@ -2369,25 +2370,18 @@ export function App() {
 
             <section className="drawerSection drawerSectionDanger">
               <div className="sectionTitle">{t("uninstallTitle")}</div>
-              <p className="drawerNote">{t("uninstallDescription")}</p>
-              <div className="serviceActions">
-                <button
-                  type="button"
-                  className="dangerButton"
-                  onClick={() => void uninstallAddin(false)}
-                  disabled={isUninstalling}
-                >
-                  {isUninstalling ? t("uninstalling") : t("uninstallKeepData")}
-                </button>
-                <button
-                  type="button"
-                  className="dangerButton"
-                  onClick={() => void uninstallAddin(true)}
-                  disabled={isUninstalling}
-                >
-                  {isUninstalling ? t("uninstalling") : t("uninstallRemoveAll")}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="dangerButton fullWidth"
+                onClick={() => void uninstallAddin()}
+                disabled={isUninstalling}
+              >
+                <Trash2 size={15} />
+                {isUninstalling ? t("uninstalling") : t("uninstallButton")}
+              </button>
+              {uninstallStatus ? (
+                <span className="testStatus testing">{uninstallStatus}</span>
+              ) : null}
             </section>
 
           </aside>

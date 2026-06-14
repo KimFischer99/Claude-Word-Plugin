@@ -1220,7 +1220,8 @@ textarea:focus-visible {
 .composerMenu svg,
 .routeActionButton svg,
 .primaryButton svg,
-.ghostButton svg {
+.ghostButton svg,
+.dangerButton svg {
   width: 16px;
   height: 16px;
 }
@@ -1269,29 +1270,31 @@ textarea:focus-visible {
 }
 
 .dangerButton {
-  background: transparent;
-  color: var(--aw-danger);
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--aw-danger);
   border-radius: 8px;
-  padding: 7px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  background: var(--aw-danger);
+  color: #fffdf9;
+  font-size: 11px;
+  font-weight: 760;
+  padding: 0 12px;
 }
 
-.dangerButton:hover {
-  background: var(--aw-danger);
-  color: #fff;
+.dangerButton:hover:not(:disabled) {
+  background: #80331e;
 }
 
 .dangerButton:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .drawerSectionDanger {
-  border-top: 1px solid rgba(155, 63, 37, 0.25);
-  padding-top: 18px;
-  margin-top: 8px;
+  background:
+    linear-gradient(var(--aw-panel), var(--aw-panel)) padding-box,
+    linear-gradient(135deg, rgba(155, 63, 37, 0.42), rgba(155, 63, 37, 0.08))
+      border-box;
 }

@@ -12,7 +12,9 @@ CONFIG_FILE="$USER_DIR/config.json"
 CERT_FILE="$USER_DIR/certs/localhost.crt"
 CERT_KEY_FILE="$USER_DIR/certs/localhost.key"
 SERVER_PORT="${AW_SERVER_PORT:-5201}"
-WORD_GRACE_SECONDS="${AW_WORD_GRACE_SECONDS:-10}"
+WORD_GRACE_SECONDS="${AW_WORD_GRACE_SECONDS:-300}"
+WORD_POLL_SECONDS="${AW_WORD_POLL_SECONDS:-0.5}"
+PREWARM_SECONDS="${AW_PREWARM_SECONDS:-300}"
 SERVER_PID_FILE="$PID_DIR/aw-server.pid"
 WATCHER_LOG="$LOG_DIR/watcher.log"
 SERVER_LOG="$LOG_DIR/server.log"
@@ -125,21 +127,22 @@ trap stop_server EXIT INT TERM
 
 log "watcher started"
 missing_since=""
+prewarm_until=$(( $(date +%s) + PREWARM_SECONDS ))
 
 while true; do
-  if word_is_running; then
+  now="$(date +%s)"
+  if word_is_running || [ "$now" -lt "$prewarm_until" ]; then
     missing_since=""
     start_server || true
   else
     if [ -z "$missing_since" ]; then
-      missing_since="$(date +%s)"
+      missing_since="$now"
     fi
 
-    now="$(date +%s)"
     if [ $((now - missing_since)) -ge "$WORD_GRACE_SECONDS" ]; then
       stop_server
     fi
   fi
 
-  sleep 2
+  sleep "$WORD_POLL_SECONDS"
 done
