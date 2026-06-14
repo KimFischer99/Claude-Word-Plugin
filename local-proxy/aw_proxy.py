@@ -3,6 +3,7 @@ import base64
 from html import unescape
 from html.parser import HTMLParser
 import ipaddress
+import json
 from pathlib import Path
 import random
 import re
@@ -462,6 +463,17 @@ async def uninstall_addin(
     import shlex  # noqa: E402
     import subprocess  # noqa: E402
 
+    home = Path.home()
+    manifest_paths = [
+        home / "Library/Containers/com.microsoft.Word/Data/Documents/wef/aw-manifest.xml",
+        home / "Library/Containers/com.microsoft.Word/Data/Documents/Office Add-ins/aw-manifest.xml",
+    ]
+    for manifest_path in manifest_paths:
+        try:
+            manifest_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning(f"Could not remove Word add-in manifest {manifest_path}: {exc}")
+
     uninstall_script = "/Library/Application Support/AW/uninstall.sh"
     if Path(uninstall_script).exists():
         script_command = f"{shlex.quote(uninstall_script)} --purge-data"
@@ -470,15 +482,10 @@ async def uninstall_addin(
         shell_command = 'sleep 2 && /usr/bin/osascript -e "$1"'
         popen_args = ["nohup", "bash", "-c", shell_command, "aw-uninstall", apple_script]
     else:
-        home = Path.home()
         root_dir = Path(__file__).resolve().parents[1]
         dev_control = root_dir / "scripts" / "dev-control.sh"
         runtime_dir = root_dir / ".aw-runtime"
         user_support_dir = home / "Library/Application Support/AW"
-        manifest_paths = [
-            home / "Library/Containers/com.microsoft.Word/Data/Documents/wef/aw-manifest.xml",
-            home / "Library/Containers/com.microsoft.Word/Data/Documents/Office Add-ins/aw-manifest.xml",
-        ]
         cleanup_parts = [
             f"{shlex.quote(str(dev_control))} agent-uninstall >/dev/null 2>&1 || true",
             f"{shlex.quote(str(dev_control))} stop >/dev/null 2>&1 || true",

@@ -487,6 +487,19 @@ button:disabled {
   height: 2px;
   border-radius: 999px;
   background: var(--aw-accent);
+  transform-origin: center;
+  animation: aw-rule-stretch 2.8s ease-in-out infinite;
+}
+
+@keyframes aw-rule-stretch {
+  0%,
+  100% {
+    transform: scaleX(0.58);
+  }
+
+  50% {
+    transform: scaleX(1);
+  }
 }
 
 .primaryButton,
@@ -666,7 +679,9 @@ button:disabled {
   z-index: 10;
   display: grid;
   gap: 4px;
-  width: min(224px, calc(100% - 16px));
+  width: max-content;
+  min-width: 132px;
+  max-width: calc(100% - 16px);
   border: 1px solid var(--aw-line);
   border-radius: 10px;
   background: var(--aw-panel);
@@ -684,13 +699,13 @@ button:disabled {
 
 .composerMenu.model {
   right: 44px;
-  width: min(244px, calc(100% - 16px));
+  min-width: 184px;
 }
 
 .composerMenu button {
   display: flex;
   min-height: 32px;
-  width: 100%;
+  width: auto;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -701,6 +716,7 @@ button:disabled {
   font-weight: 650;
   padding: 0 9px;
   text-align: left;
+  white-space: nowrap;
 }
 
 .composerMenu button:hover,
