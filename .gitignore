@@ -1,20 +1,43 @@
 node_modules/
+**/node_modules/
 dist/
 .DS_Store
+**/.DS_Store
+._*
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .aw-runtime/
 build/
 release/
 *.pkg
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
 
 addin/dist/
 addin/.vite/
+addin/.DS_Store
+addin/node_modules/
 
 local-proxy/.venv/
 local-proxy/.env
+local-proxy/runtime.json
 local-proxy/data/
 local-proxy/logs/
-local-proxy/runtime.json
+local-proxy/*.log
+local-proxy/certs/
 
 DeepSeek_API_test.txt
+Commands
+SPEC.md
+
+.env
+.env.*
+!.env.example
+!.env.template
+
+.vscode/
+.idea/

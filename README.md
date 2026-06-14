@@ -1,75 +1,87 @@
-# A\W Word Claude MVP
+# Claude Word Plugin
 
-A\W is a private MVP Word task pane add-in for Mac. It reads selected Word text or a truncated document body, sends the context to a local Claude-compatible proxy, and keeps follow-up chat grounded with selection, document, and quoted-response tokens.
+Claude Word Plugin is a Microsoft Word add-in for document collaboration with Claude-style assistance. It is inspired by the Claude for Word workflow and focuses on reading selected text, document excerpts, quoted replies, and user-provided context inside Word.
 
-## Local Setup
+The add-in can use a local proxy to turn a Claude Web session into an API-like provider for the Word plugin. It also supports multi-account routing for Claude Web accounts and a custom Anthropic-compatible API endpoint if you prefer to bring your own provider.
 
-1. Install JavaScript dependencies:
+English | [简体中文](README.zh.md)
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Prepare the local Claude proxy:
+- Word task pane experience for document drafting, review, summarization, and rewriting.
+- Context attachment from selected Word text, document excerpts, quoted assistant replies, and pasted web links.
+- Claude Web account import through a local proxy with multi-account routing.
+- Custom Anthropic-compatible API configuration for self-managed providers.
+- Model selection for Sonnet/Haiku-style routes and thinking-effort controls.
+- Built-in writing shortcuts for summarize, humanize, and review workflows.
+- Local-first desktop packaging for macOS Beta 0.1.0.
+- Read-only document boundary by default: the add-in reads Word context for assistance and does not autonomously modify the document.
 
-   ```bash
-   ./scripts/setup-proxy.sh
-   ```
+## Getting Started
 
-3. Sideload the manifest in Word for Mac:
+### Requirements
 
-   ```bash
-   ./scripts/sideload-mac.sh
-   ```
+- macOS with Microsoft Word installed.
+- A browser signed in to Claude if you plan to use Claude Web account routing.
+- Optional: an Anthropic-compatible API endpoint and key.
 
-   This follows Microsoft's Mac sideload path for Word:
-   `~/Library/Containers/com.microsoft.Word/Data/Documents/wef`.
+The packaged macOS installer includes the local service runtime. End users do not need Node.js or Python installed.
 
-4. Install and load the Word lifecycle watcher:
+### Install the Beta
 
-   ```bash
-   npm run dev:agent-install
-   ```
+1. Download `AW_beta_0.1.0.pkg` from the release page.
+2. Open the package and complete the macOS installer.
+3. Restart Microsoft Word.
+4. Open a document, then launch the add-in from Word's add-ins menu.
+5. Open Settings and choose either Claude Web routing or a custom compatible API.
 
-   This installs a macOS LaunchAgent watcher for the current user. Ports stay
-   closed by default; the watcher starts the HTTPS add-in server on `3000` and
-   the local proxy on `5201` after Microsoft Word opens, then stops them after
-   Word fully quits.
+### Import a Claude Web Account
 
-5. Open Word, open a document, then choose Home > Add-ins > A\W.
+1. Sign in to Claude in your browser.
+2. Copy your Claude cookie. The recommended helper is the Chrome extension [Get Cookies](https://chromewebstore.google.com/detail/get-cookies/hdablekeodiopcnddiamhahahkiiloph), which can copy the cookie in one step.
+3. Paste the cookie into the add-in Settings account field.
+4. Test the connection before using it with document context.
 
-6. When done, fully quit Word. The watcher stops the managed ports after the
-   grace period. Press Ctrl+C in the watcher terminal to stop watching.
+### Use a Compatible API
 
-   ```bash
-   npm run dev:stop
-   ```
+1. Open Settings.
+2. Choose the custom API provider mode.
+3. Enter your compatible endpoint, API key, and model mapping.
+4. Send a short test prompt before attaching Word context.
 
-Useful dev lifecycle commands:
+## Safety Notice
+
+Claude Web proxying depends on browser-session cookies and may carry account risk. For safer testing, create a separate Claude account before importing cookies, and avoid using a primary personal account until you understand the tradeoffs.
+
+Only import accounts and API keys you are allowed to use. Keep cookies, keys, logs, and local runtime data out of Git and public issue reports.
+
+## Development
 
 ```bash
-npm run dev:status
+npm install
+./scripts/setup-proxy.sh
 npm run dev:agent-install
-npm run dev:stop
-npm run dev:session
 ```
 
-`dev:agent-install` is the durable workflow: it loads a per-user macOS
-LaunchAgent that watches Word even after the terminal command returns.
-`dev:start` is a lighter background watcher for the current shell session.
-`dev:watch` runs the same watcher in the foreground for debugging.
-`dev:session` starts the watcher and opens Microsoft Word for you.
+Open Word and load the add-in. For local checks:
 
-For troubleshooting only, `dev:force-start` and `dev:force-restart` can force
-both ports online without waiting for Word. The Word task pane itself cannot
-reliably start or kill local processes, so the dev watcher/helper is the
-lifecycle owner.
+```bash
+npm run typecheck
+npm run build
+./scripts/check-sanitized.sh
+```
 
-## MVP Scope
+Build the macOS package:
 
-- Mac first.
-- Uses Office.js Task Pane Add-in.
-- Uses a local Claude2API-compatible service runtime.
-- Supports explicit selection, document, and quoted-response context tokens.
-- Supports assistant retry, copy, and quote actions inside the conversation.
-- No AppSource, installer, cloud database, multi-user auth, full RAG, or Track Changes integration yet.
+```bash
+npm run build:installer
+cp A-W-Installer-0.1.0.pkg AW_beta_0.1.0.pkg
+```
+
+## References
+
+See [REFERENCES.md](REFERENCES.md) for related projects and documentation.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).

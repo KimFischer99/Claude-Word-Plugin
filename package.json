@@ -1,8 +1,8 @@
 {
-  "name": "aw-word-claude-mvp",
+  "name": "claude-word-plugin",
   "private": true,
   "version": "0.1.0",
-  "description": "A\\W Word task pane MVP with a local Claude-compatible proxy.",
+  "description": "Microsoft Word add-in for Claude-style document collaboration.",
   "scripts": {
     "dev:control": "./scripts/dev-control.sh",
     "dev:start": "./scripts/dev-control.sh start",

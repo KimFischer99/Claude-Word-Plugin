@@ -21,6 +21,10 @@ fi
 
 FAILED=0
 
+is_tracked() {
+  git -C "$ROOT_DIR" ls-files --error-unmatch "$1" >/dev/null 2>&1
+}
+
 for pattern in "${PATTERNS[@]}"; do
   # Exclude this script itself, .git, node_modules, .venv, dist, build, .aw-runtime, .env
   HITS=$(grep -r "$pattern" "$ROOT_DIR" \
@@ -66,6 +70,50 @@ if [ -n "$HITS" ]; then
   FAILED=1
 else
   echo "PASS: No product-facing legacy runtime references found"
+fi
+
+FORBIDDEN_TRACKED_FILES=(
+  "DeepSeek_API_test.txt"
+  "SPEC.md"
+  "Commands"
+  "local-proxy/.env"
+  "local-proxy/runtime.json"
+  "local-proxy/data/accounts.json"
+)
+
+for file in "${FORBIDDEN_TRACKED_FILES[@]}"; do
+  if is_tracked "$file"; then
+    echo "FAIL: Local/private file is tracked: $file"
+    FAILED=1
+  else
+    echo "PASS: Local/private file is not tracked: $file"
+  fi
+done
+
+SECRET_REGEX='(sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sessionKey=[^;[:space:]]{20,}|Cookie:[[:space:]]*[^[:space:]]{20,}|BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY)'
+SECRET_HITS=$(grep -R -I -E "$SECRET_REGEX" "$ROOT_DIR" \
+  --exclude-dir='.git' \
+  --exclude-dir='node_modules' \
+  --exclude-dir='.venv' \
+  --exclude-dir='dist' \
+  --exclude-dir='build' \
+  --exclude-dir='.aw-runtime' \
+  --exclude-dir='data' \
+  --exclude-dir='logs' \
+  --exclude='package-lock.json' \
+  --exclude='check-sanitized.sh' \
+  --exclude='.env' \
+  --exclude='runtime.json' \
+  --exclude='*.log' \
+  --exclude='*.jsonl' \
+  -n 2>/dev/null || true)
+
+if [ -n "$SECRET_HITS" ]; then
+  echo "FAIL: Potential secret material found:"
+  echo "$SECRET_HITS"
+  FAILED=1
+else
+  echo "PASS: No API key, cookie, bearer token, or private key patterns found"
 fi
 
 if [ "$FAILED" -eq 1 ]; then
